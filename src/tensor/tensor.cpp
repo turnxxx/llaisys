@@ -162,29 +162,86 @@ void Tensor::debug() const {
         debug_print(tmp_tensor->data(), this->shape(), this->strides(), this->dtype());
     }
 }
-
+// 检查张量的形状和步长，判断它在内存中是否连续
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    // TO_BE_IMPLEMENTED();
+    for (size_t i = 0; i < this->ndim() - 1; i++) {
+        if (this->strides()[i] != this->strides()[i + 1] * static_cast<ptrdiff_t>(this->shape()[i + 1])) {
+            return false;
+        }
+    }
+    if (this->strides()[this->ndim() - 1] != 1) {
+        return false;
+    }
     return true;
 }
 
-tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
-}
-
+/* 创建一个新张量，通过拆分或合并原始维度将原始张量重塑为给定形状。不涉及数据传输。
+例如，通过合并最后两个维度，将形状为(2, 3, 5)的张量更改为(2, 15)。
+这个函数不是简单地改变张量的形状那么简单，尽管测试会通过。
+如果新视图与原始张量不兼容，它应该引发错误。
+想想一个形状为(2, 3, 5)、步长为(30, 10, 1)的张量。
+你还能在不传输数据的情况下将其重塑为(2, 15)吗？ */
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
-}
+    // 要求元素总数一致
+    size_t new_numel = 1;
+    for (auto dim : shape) {
+        new_numel *= dim;
+    }
+    ASSERT(new_numel == this->numel(), "view error! numel mismatch");
 
+    // 仅支持连续内存的 view（非连续需要更复杂的兼容性检查）
+    ASSERT(isContiguous(), "view error! tensor is not contiguous");
+
+    // 计算新的连续步长
+    std::vector<ptrdiff_t> new_strides(shape.size());
+    ptrdiff_t stride = 1;
+    for (size_t i = shape.size(); i-- > 0;) {
+        new_strides[i] = stride;
+        stride *= static_cast<ptrdiff_t>(shape[i]);
+    }
+    TensorMeta new_meta{this->dtype(), shape, std::move(new_strides)};
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, this->_storage, this->_offset));
+}
+/* 创建一个新张量，改变原始张量维度的顺序。转置可以通过这个函数实现，而无需移动数据。 */
+tensor_t Tensor::permute(const std::vector<size_t> &order) const {
+    //  TO_BE_IMPLEMENTED();
+    // 先计算新的shape与stride
+    std::vector<size_t> new_shape(this->shape().size());
+    std::vector<ptrdiff_t> new_strides(this->strides().size());
+    // 计算新的shape与stride
+    // 新的shape计算
+    for (size_t i = 0; i < this->shape().size(); i++) {
+        new_shape[i] = this->shape()[order[i]];
+        new_strides[i] = this->strides()[order[i]];
+    }
+    TensorMeta new_meta{this->dtype(), new_shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, this->_storage, this->_offset));
+}
+// 创建一个新张量，沿给定维度，start（包含）和end（不包含）索引对原始张量进行切片操作。
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    // 计算新的shape
+    std::vector<size_t> new_shape = this->shape();
+    new_shape[dim] = end - start;
+    // 计算新的offset
+    size_t new_offset = this->_offset;
+    new_offset += start * this->strides()[dim] * this->elementSize();
+    TensorMeta new_meta{this->dtype(), new_shape, this->strides()};
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, this->_storage, new_offset));
 }
 
+// 将主机（cpu）数据加载到张量（可以在设备上）。
+// 查看构造函数了解如何获取当前设备上下文的运行时API，并执行从主机到设备的内存复制。
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+    // step1:获取运行时设备类型
+    llaisysDeviceType_t device_type = core::context().runtime().deviceType();
+    if (device_type == LLAISYS_DEVICE_CPU) {
+        // 当前上下文在cpu上
+        std::memcpy(this->data(), src_, this->numel() * this->elementSize());
+    } else {
+        // 当前上下文在设备上，同步拷贝
+        core::context().runtime().api()->memcpy_sync(this->data(), src_, this->numel() * this->elementSize(), LLAISYS_MEMCPY_H2D);
+    }
 }
 
 tensor_t Tensor::contiguous() const {
