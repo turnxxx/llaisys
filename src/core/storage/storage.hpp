@@ -8,10 +8,10 @@
 namespace llaisys::core {
 class Storage {
 private:
-    std::byte *_memory;
-    size_t _size;
-    Runtime &_runtime;
-    bool _is_host;
+    std::byte *_memory; // 指向实际内存的指针
+    size_t _size;       // 内存大小
+    Runtime &_runtime;  // 关联的运行时
+    bool _is_host;      // 是否是主机内存
     Storage(std::byte *memory, size_t size, Runtime &runtime, bool is_host);
 
 public:
