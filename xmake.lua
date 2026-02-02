@@ -174,15 +174,3 @@ target("llaisys")
         end
     end)
 target_end()
-
-target("test-model-config")
-    set_kind("binary")
-    set_languages("cxx17")
-    set_warnings("all", "error")
-    add_includedirs(".")
-    set_rundir(os.projectdir())
-    set_installdir(".")
-    add_defines("LLAISYS_PROJECT_DIR=\"" .. os.projectdir() .. "\"")
-    add_files("test/model_utils/model_confg/test_model_config.cpp",
-              "src/model/model_utils.cpp")
-target_end()
