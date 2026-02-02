@@ -36,7 +36,7 @@ tensor_t qwen2_decoder(tensor_t &hidden_states,
     llaisysDataType_t dtype = meta_data.torch_type;
     llaisysDeviceType_t device_type = hidden_states->deviceType();
     float rms_norm_eps = meta_data.rms_norm_eps;
-    float rope_theta = meta_data.rope_theta;
+    float rope_theta = static_cast<float>(meta_data.rope_theta);
     // input_layernorm计算
     std::vector<size_t> input_normed_shape(hidden_states->shape());
     tensor_t input_normed_states = llaisys::Tensor::create(input_normed_shape, dtype, device_type);
@@ -78,7 +78,7 @@ tensor_t qwen2_decoder(tensor_t &hidden_states,
     kv_cache->append(layer, k_rope, v_3d);
     // GQA
     tensor_t attn_val = Tensor::create(q_rope->shape(), dtype, device_type);
-    float scale = 1 / sqrt(head_dim);
+    float scale = 1 / sqrt(static_cast<float>(head_dim));
     // 从KV_cache里取出张量
     tensor_t k_attn;
     tensor_t v_attn;
