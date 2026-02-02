@@ -5,8 +5,8 @@ add_includedirs("include")
 add_includedirs(".")
 add_includedirs("src")
 add_includedirs("thirdparty")
-add_includedirs("thirdparty/json/include")
-add_includedirs("thirdparty/json/include")
+add_includedirs("thirdparty/nlohmann/include")
+add_includedirs("thirdparty/nlohmann/include")
 -- CPU --
 includes("xmake/cpu.lua")
 
