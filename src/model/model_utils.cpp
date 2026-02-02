@@ -2,10 +2,178 @@
 
 #include <cctype>
 #include <fstream>
-#include <nlohmann/json.hpp>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
-using json = nlohmann::json;
+
+namespace {
+std::string read_all(const std::string &path) {
+    std::ifstream ifs(path);
+    if (!ifs) {
+        throw std::runtime_error("failed to open config file: " + path);
+    }
+    std::stringstream buffer;
+    buffer << ifs.rdbuf();
+    return buffer.str();
+}
+
+size_t skip_ws(const std::string &s, size_t i) {
+    while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) {
+        ++i;
+    }
+    return i;
+}
+
+size_t find_key(const std::string &s, const std::string &key) {
+    const std::string pattern = "\"" + key + "\"";
+    return s.find(pattern);
+}
+
+std::string parse_string(const std::string &s, size_t &i) {
+    i = skip_ws(s, i);
+    if (i >= s.size() || s[i] != '"') {
+        throw std::runtime_error("expected string");
+    }
+    ++i;
+    std::string out;
+    while (i < s.size()) {
+        char c = s[i++];
+        if (c == '\\') {
+            if (i < s.size()) {
+                out.push_back(s[i++]);
+            }
+        } else if (c == '"') {
+            break;
+        } else {
+            out.push_back(c);
+        }
+    }
+    return out;
+}
+
+double parse_number(const std::string &s, size_t &i) {
+    i = skip_ws(s, i);
+    size_t start = i;
+    if (i < s.size() && (s[i] == '-' || s[i] == '+')) {
+        ++i;
+    }
+    while (i < s.size() && (std::isdigit(static_cast<unsigned char>(s[i])) || s[i] == '.' || s[i] == 'e' || s[i] == 'E' || s[i] == '+' || s[i] == '-')) {
+        ++i;
+    }
+    return std::stod(s.substr(start, i - start));
+}
+
+bool parse_bool(const std::string &s, size_t &i) {
+    i = skip_ws(s, i);
+    if (s.compare(i, 4, "true") == 0) {
+        i += 4;
+        return true;
+    }
+    if (s.compare(i, 5, "false") == 0) {
+        i += 5;
+        return false;
+    }
+    throw std::runtime_error("expected bool");
+}
+
+std::optional<size_t> find_value_pos(const std::string &s, const std::string &key) {
+    size_t pos = find_key(s, key);
+    if (pos == std::string::npos) {
+        return std::nullopt;
+    }
+    pos = s.find(':', pos);
+    if (pos == std::string::npos) {
+        throw std::runtime_error("missing ':' for key: " + key);
+    }
+    return pos + 1;
+}
+
+std::string get_required_string(const std::string &s, const std::string &key) {
+    auto pos = find_value_pos(s, key);
+    if (!pos) {
+        throw std::runtime_error("missing key: " + key);
+    }
+    size_t i = *pos;
+    return parse_string(s, i);
+}
+
+std::optional<std::string> get_optional_string(const std::string &s, const std::string &key) {
+    auto pos = find_value_pos(s, key);
+    if (!pos) {
+        return std::nullopt;
+    }
+    size_t i = *pos;
+    return parse_string(s, i);
+}
+
+size_t get_required_size_t(const std::string &s, const std::string &key) {
+    auto pos = find_value_pos(s, key);
+    if (!pos) {
+        throw std::runtime_error("missing key: " + key);
+    }
+    size_t i = *pos;
+    return static_cast<size_t>(parse_number(s, i));
+}
+
+float get_required_float(const std::string &s, const std::string &key) {
+    auto pos = find_value_pos(s, key);
+    if (!pos) {
+        throw std::runtime_error("missing key: " + key);
+    }
+    size_t i = *pos;
+    return static_cast<float>(parse_number(s, i));
+}
+
+float get_optional_float(const std::string &s, const std::string &key, float def) {
+    auto pos = find_value_pos(s, key);
+    if (!pos) {
+        return def;
+    }
+    size_t i = *pos;
+    return static_cast<float>(parse_number(s, i));
+}
+
+size_t get_optional_size_t(const std::string &s, const std::string &key, size_t def) {
+    auto pos = find_value_pos(s, key);
+    if (!pos) {
+        return def;
+    }
+    size_t i = *pos;
+    return static_cast<size_t>(parse_number(s, i));
+}
+
+bool get_optional_bool(const std::string &s, const std::string &key, bool def) {
+    auto pos = find_value_pos(s, key);
+    if (!pos) {
+        return def;
+    }
+    size_t i = *pos;
+    return parse_bool(s, i);
+}
+
+std::optional<std::string> get_architecture(const std::string &s) {
+    auto pos = find_value_pos(s, "architectures");
+    if (!pos) {
+        return std::nullopt;
+    }
+    size_t i = skip_ws(s, *pos);
+    if (i >= s.size()) {
+        return std::nullopt;
+    }
+    if (s[i] == '[') {
+        ++i;
+        i = skip_ws(s, i);
+        if (i < s.size() && s[i] == ']') {
+            return std::nullopt;
+        }
+        return parse_string(s, i);
+    }
+    if (s[i] == '"') {
+        return parse_string(s, i);
+    }
+    return std::nullopt;
+}
+} // namespace
 namespace llaisys::model {
 llaisys::model::meta_data Model_Config::get_meta_data() const {
     return meta_data;
@@ -13,13 +181,7 @@ llaisys::model::meta_data Model_Config::get_meta_data() const {
 void Model_Config::read_from_config(const std::string &config_path)
 // 解析config.json，设置模型超参
 {
-    // 从文件读取 JSON
-    std::ifstream ifs(config_path);
-    if (!ifs) {
-        throw std::runtime_error("failed to open config file: " + config_path);
-    }
-
-    json config_json = json::parse(ifs);
+    const std::string config_json = read_all(config_path);
 
     auto to_lower = [](std::string s) {
         for (auto &ch : s) {
@@ -53,39 +215,35 @@ void Model_Config::read_from_config(const std::string &config_path)
         throw std::runtime_error("unsupported torch_dtype: " + dtype);
     };
 
-    // architectures 可能是数组或字符串
-    if (config_json.contains("architectures")) {
-        const auto &arch = config_json.at("architectures");
-        if (arch.is_array() && !arch.empty()) {
-            meta_data.architercutres = arch.at(0).get<std::string>();
-        } else {
-            meta_data.architercutres = arch.get<std::string>();
-        }
+    if (const auto arch = get_architecture(config_json)) {
+        meta_data.architercutres = *arch;
     }
 
-    meta_data.attention_dropout = config_json.value("attention_dropout", 0.0f);
-    meta_data.bos_token_id = config_json.at("bos_token_id").get<size_t>();
-    meta_data.eos_token_id = config_json.at("eos_token_id").get<size_t>();
-    meta_data.hidden_act = parse_hidden_act(config_json.at("hidden_act").get<std::string>());
-    meta_data.hidden_size = config_json.at("hidden_size").get<size_t>();
-    meta_data.initializer_range = config_json.value("initializer_range", 0.0f);
-    meta_data.intermediate_size = config_json.at("intermediate_size").get<size_t>();
-    meta_data.max_position_embeddings = config_json.at("max_position_embeddings").get<size_t>();
-    meta_data.max_window_layers = config_json.value("max_window_layers", size_t{0});
-    meta_data.model_type = config_json.at("model_type").get<std::string>();
-    meta_data.num_attention_heads = config_json.at("num_attention_heads").get<size_t>();
-    meta_data.num_hidden_layers = config_json.at("num_hidden_layers").get<size_t>();
-    meta_data.num_key_value_heads = config_json.at("num_key_value_heads").get<size_t>();
-    meta_data.rms_norm_eps = config_json.at("rms_norm_eps").get<float>();
-    meta_data.rope_theta = config_json.value("rope_theta", size_t{0});
-    meta_data.sliding_window = config_json.value("sliding_window", size_t{0});
-    meta_data.tie_word_embeddings = config_json.value("tie_word_embeddings", false);
-    meta_data.torch_type = parse_torch_dtype(config_json.at("torch_dtype").get<std::string>());
-    meta_data.transformers_version = config_json.value("transformers_version", std::string{});
-    meta_data.use_cache = config_json.value("use_cache", false);
-    meta_data.use_mrope = config_json.value("use_mrope", false);
-    meta_data.use_sliding_window = config_json.value("use_sliding_window", false);
-    meta_data.vocab_size = config_json.at("vocab_size").get<size_t>();
+    meta_data.attention_dropout = get_optional_float(config_json, "attention_dropout", 0.0f);
+    meta_data.bos_token_id = get_required_size_t(config_json, "bos_token_id");
+    meta_data.eos_token_id = get_required_size_t(config_json, "eos_token_id");
+    meta_data.hidden_act = parse_hidden_act(get_required_string(config_json, "hidden_act"));
+    meta_data.hidden_size = get_required_size_t(config_json, "hidden_size");
+    meta_data.initializer_range = get_optional_float(config_json, "initializer_range", 0.0f);
+    meta_data.intermediate_size = get_required_size_t(config_json, "intermediate_size");
+    meta_data.max_position_embeddings = get_required_size_t(config_json, "max_position_embeddings");
+    meta_data.max_window_layers = get_optional_size_t(config_json, "max_window_layers", size_t{0});
+    meta_data.model_type = get_required_string(config_json, "model_type");
+    meta_data.num_attention_heads = get_required_size_t(config_json, "num_attention_heads");
+    meta_data.num_hidden_layers = get_required_size_t(config_json, "num_hidden_layers");
+    meta_data.num_key_value_heads = get_required_size_t(config_json, "num_key_value_heads");
+    meta_data.rms_norm_eps = get_required_float(config_json, "rms_norm_eps");
+    meta_data.rope_theta = get_optional_size_t(config_json, "rope_theta", size_t{0});
+    meta_data.sliding_window = get_optional_size_t(config_json, "sliding_window", size_t{0});
+    meta_data.tie_word_embeddings = get_optional_bool(config_json, "tie_word_embeddings", false);
+    meta_data.torch_type = parse_torch_dtype(get_required_string(config_json, "torch_dtype"));
+    if (const auto ver = get_optional_string(config_json, "transformers_version")) {
+        meta_data.transformers_version = *ver;
+    }
+    meta_data.use_cache = get_optional_bool(config_json, "use_cache", false);
+    meta_data.use_mrope = get_optional_bool(config_json, "use_mrope", false);
+    meta_data.use_sliding_window = get_optional_bool(config_json, "use_sliding_window", false);
+    meta_data.vocab_size = get_required_size_t(config_json, "vocab_size");
 }
 
 void Weight_buffer::add(const std::string &name, const Weights_t &weights) {
