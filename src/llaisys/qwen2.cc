@@ -50,7 +50,7 @@ __export struct LlaisysQwen2Model *llaisysQwen2ModelCreate(
     cfg.max_position_embeddings = meta->maxseq;
     cfg.vocab_size = meta->voc;
     cfg.rms_norm_eps = meta->epsilon;
-    cfg.rope_theta = meta->theta;
+    cfg.rope_theta = static_cast<size_t>(meta->theta);
     cfg.torch_type = meta->dtype;
     cfg.hidden_act = llaisys::model::LLAISYS_SILU;
     cfg.bos_token_id = static_cast<size_t>(meta->end_token);
