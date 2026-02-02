@@ -18,6 +18,7 @@ private:
     core::storage_t _storage;
     size_t _offset;
     Tensor(TensorMeta meta, core::storage_t storage, size_t offset = 0);
+    int something = 0;
 
 public:
     static tensor_t create(

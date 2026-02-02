@@ -10,7 +10,7 @@ import time
 import llaisys
 import sys
 import io
-
+DEBUG=True
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 
@@ -98,52 +98,53 @@ if __name__ == "__main__":
         top_p, top_k, temperature = 1.0, 1, 1.0
 
     tokenizer, model, model_path = load_hf_model(args.model, args.device)
-    print(f"Resolved model path: {model_path}")
+    print(model_path)
     # Example prompt
-    start_time = time.time()
-    tokens, output = hf_infer(
-        args.prompt,
-        tokenizer,
-        model,
-        max_new_tokens=args.max_steps,
-        top_p=top_p,
-        top_k=top_k,
-        temperature=temperature,
-    )
-    end_time = time.time()
+    if not DEBUG:
+        tart_time = time.time()
+        tokens, output = hf_infer(
+            args.prompt,
+            tokenizer,
+            model,
+            max_new_tokens=args.max_steps,
+            top_p=top_p,
+            top_k=top_k,
+            temperature=temperature,
+        )
+        end_time = time.time()
 
     del model
     gc.collect()
+    if not DEBUG:
+        print("\n=== Answer ===\n")
+        print("Tokens:")
+        print(tokens)
+        print("\nContents:")
+        print(output)
+        print("\n")
+        print(f"Time elapsed: {(end_time - start_time):.2f}s\n")
 
-    print("\n=== Answer ===\n")
-    print("Tokens:")
-    print(tokens)
-    print("\nContents:")
-    print(output)
-    print("\n")
-    print(f"Time elapsed: {(end_time - start_time):.2f}s\n")
+    # model = load_llaisys_model(model_path, args.device)
+    # start_time = time.time()
+    # llaisys_tokens, llaisys_output = llaisys_infer(
+    #     args.prompt,
+    #     tokenizer,
+    #     model,
+    #     max_new_tokens=args.max_steps,
+    #     top_p=top_p,
+    #     top_k=top_k,
+    #     temperature=temperature,
+    # )
 
-    model = load_llaisys_model(model_path, args.device)
-    start_time = time.time()
-    llaisys_tokens, llaisys_output = llaisys_infer(
-        args.prompt,
-        tokenizer,
-        model,
-        max_new_tokens=args.max_steps,
-        top_p=top_p,
-        top_k=top_k,
-        temperature=temperature,
-    )
+    # end_time = time.time()
 
-    end_time = time.time()
-
-    print("\n=== Your Result ===\n")
-    print("Tokens:")
-    print(llaisys_tokens)
-    print("\nContents:")
-    print(llaisys_output)
-    print("\n")
-    print(f"Time elapsed: {(end_time - start_time):.2f}s\n")
+    # print("\n=== Your Result ===\n")
+    # print("Tokens:")
+    # print(llaisys_tokens)
+    # print("\nContents:")
+    # print(llaisys_output)
+    # print("\n")
+    # print(f"Time elapsed: {(end_time - start_time):.2f}s\n")
 
     if args.test:
         assert llaisys_tokens == tokens

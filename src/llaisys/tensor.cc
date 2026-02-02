@@ -76,7 +76,7 @@ __C {
         size_t * shape,
         size_t ndim) {
         std::vector<size_t> shape_vec(shape, shape + ndim);
-        return new LlaisysTensor{tensor->tensor->view(shape_vec)};
+        return new LlaisysTensor{tensor->tensor->reshape(shape_vec)};
     }
 
     llaisysTensor_t tensorPermute(
