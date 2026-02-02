@@ -27,11 +27,11 @@ class Qwen2:
             print(f"first file: {files[0]}", flush=True)
         for file in files:
             with safetensors.safe_open(file, framework="pt", device="cpu") as data_:
-            for name_ in data_.keys():
-              arr = data_.get_tensor(name_)
-              llaisys_tensor = self._torch_to_llaisys_tensor(arr, device)
-              self._weight_buffer.add(name_, llaisys_tensor)
-        print(f"weight buffer size: {self._weight_buffer.size()}", flush=True)
+                for name_ in data_.keys():
+                    arr = data_.get_tensor(name_)
+                    llaisys_tensor = self._torch_to_llaisys_tensor(arr, device)
+                    self._weight_buffer.add(name_, llaisys_tensor)
+        
 
         self._create_model()
         self._load_weights()
