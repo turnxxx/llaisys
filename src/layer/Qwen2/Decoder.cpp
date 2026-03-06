@@ -7,7 +7,8 @@ tensor_t qwen2_decoder(tensor_t &hidden_states,
                        llaisys::KVcache::KVcache_t kv_cache,
                        const llaisys::model::meta_data &meta_data,
                        size_t token_pos,
-                       size_t layer) {
+                       size_t layer,
+                       int device_id) {
     LOG_INFO("qwen2_decoder::begin:token_pos:" << token_pos);
     LOG_INFO("qwen2_decoder::begin:nlayer: " << layer);
     LOG_TENSOR_META_AT("qwen2_decoder::begin:hidden_states", hidden_states);
@@ -39,16 +40,16 @@ tensor_t qwen2_decoder(tensor_t &hidden_states,
     float rope_theta = static_cast<float>(meta_data.rope_theta);
     // input_layernorm计算
     std::vector<size_t> input_normed_shape(hidden_states->shape());
-    tensor_t input_normed_states = llaisys::Tensor::create(input_normed_shape, dtype, device_type);
+    tensor_t input_normed_states = llaisys::Tensor::create(input_normed_shape, dtype, device_type, device_id);
     ops::rms_norm(input_normed_states, hidden_states, input_lm_weight->weights(), rms_norm_eps);
     LOG_TENSOR_META_AT("input_normed_states:", input_normed_states);
     // Q,K,V投影,调用Linear算子
     std::vector<size_t> Q_shape{seq_len, hidden_size};
     std::vector<size_t> K_shape{seq_len, kv_dim};
     std::vector<size_t> V_shape{seq_len, kv_dim};
-    tensor_t q = llaisys::Tensor::create(Q_shape, dtype, device_type);
-    tensor_t k = llaisys::Tensor::create(K_shape, dtype, device_type);
-    tensor_t v = llaisys::Tensor::create(V_shape, dtype, device_type);
+    tensor_t q = llaisys::Tensor::create(Q_shape, dtype, device_type, device_id);
+    tensor_t k = llaisys::Tensor::create(K_shape, dtype, device_type, device_id);
+    tensor_t v = llaisys::Tensor::create(V_shape, dtype, device_type, device_id);
     ops::linear(q, input_normed_states, Wq->weights(), bias_q->weights());
     ops::linear(k, input_normed_states, Wk->weights(), bias_k->weights());
     ops::linear(v, input_normed_states, Wv->weights(), bias_v->weights());
@@ -62,13 +63,13 @@ tensor_t qwen2_decoder(tensor_t &hidden_states,
     tensor_t k_3d = k->reshape(ghq_k_shape);
     tensor_t v_3d = v->reshape(ghq_v_shape);
     // rope
-    tensor_t q_rope = llaisys::Tensor::create(ghq_q_shape, dtype, device_type);
-    tensor_t k_rope = llaisys::Tensor::create(ghq_k_shape, dtype, device_type);
+    tensor_t q_rope = llaisys::Tensor::create(ghq_q_shape, dtype, device_type, device_id);
+    tensor_t k_rope = llaisys::Tensor::create(ghq_k_shape, dtype, device_type, device_id);
     std::vector<int64_t> pos_ids_host(seq_len);
     for (size_t i = 0; i < seq_len; ++i) {
         pos_ids_host[i] = static_cast<int64_t>(token_pos + i);
     }
-    tensor_t pos_ids = llaisys::Tensor::create({seq_len}, LLAISYS_DTYPE_I64, device_type);
+    tensor_t pos_ids = llaisys::Tensor::create({seq_len}, LLAISYS_DTYPE_I64, device_type, device_id);
     pos_ids->load(pos_ids_host.data());
     ops::rope(q_rope, q_3d, pos_ids, rope_theta);
     ops::rope(k_rope, k_3d, pos_ids, rope_theta);
@@ -77,7 +78,7 @@ tensor_t qwen2_decoder(tensor_t &hidden_states,
     // 存入KVcache
     kv_cache->append(layer, k_rope, v_3d);
     // GQA
-    tensor_t attn_val = Tensor::create(q_rope->shape(), dtype, device_type);
+    tensor_t attn_val = Tensor::create(q_rope->shape(), dtype, device_type, device_id);
     float scale = 1 / sqrt(static_cast<float>(head_dim));
     // 从KV_cache里取出张量
     tensor_t k_attn;
@@ -89,32 +90,32 @@ tensor_t qwen2_decoder(tensor_t &hidden_states,
     LOG_TENSOR_META_AT("attn_val", attn_val);
     tensor_t attn_val_2d = attn_val->reshape({seq_len, hidden_size});
     LOG_TENSOR_META_AT("attn_val_2d", attn_val_2d);
-    tensor_t attn_output = Tensor::create({seq_len, hidden_size}, dtype, device_type);
+    tensor_t attn_output = Tensor::create({seq_len, hidden_size}, dtype, device_type, device_id);
     LOG_TENSOR_META_AT("attn_output", attn_output);
     LOG_TENSOR_META_AT("Wo:", Wo->weights());
     ops::linear(attn_output, attn_val_2d, Wo->weights(), nullptr);
     LOG_TENSOR_META_AT("attn_output", attn_output);
     // 残差连接
-    tensor_t self_attn_output = Tensor::create({seq_len, hidden_size}, dtype, device_type);
+    tensor_t self_attn_output = Tensor::create({seq_len, hidden_size}, dtype, device_type, device_id);
     ops::add(self_attn_output, hidden_states, attn_output);
     LOG_TENSOR_META_AT("self_attn_output", self_attn_output);
     // MLP层
-    tensor_t post_attn_normed = Tensor::create({seq_len, hidden_size}, dtype, device_type);
+    tensor_t post_attn_normed = Tensor::create({seq_len, hidden_size}, dtype, device_type, device_id);
     ops::rms_norm(post_attn_normed, self_attn_output, post_attn_weight->weights(), rms_norm_eps);
     LOG_TENSOR_META_AT("post_attn_normed", post_attn_normed);
     size_t intermediate_size = meta_data.intermediate_size;
-    tensor_t gate_proj = Tensor::create({seq_len, intermediate_size}, dtype, device_type);
-    tensor_t up_proj = Tensor::create({seq_len, intermediate_size}, dtype, device_type);
+    tensor_t gate_proj = Tensor::create({seq_len, intermediate_size}, dtype, device_type, device_id);
+    tensor_t up_proj = Tensor::create({seq_len, intermediate_size}, dtype, device_type, device_id);
     ops::linear(gate_proj, post_attn_normed, gate->weights(), nullptr);
     ops::linear(up_proj, post_attn_normed, up->weights(), nullptr);
 
-    tensor_t mlp_hidden = Tensor::create({seq_len, intermediate_size}, dtype, device_type);
+    tensor_t mlp_hidden = Tensor::create({seq_len, intermediate_size}, dtype, device_type, device_id);
     ops::swiglu(mlp_hidden, gate_proj, up_proj);
 
-    tensor_t mlp_out = Tensor::create({seq_len, hidden_size}, dtype, device_type);
+    tensor_t mlp_out = Tensor::create({seq_len, hidden_size}, dtype, device_type, device_id);
     ops::linear(mlp_out, mlp_hidden, down->weights(), nullptr);
 
-    tensor_t output = Tensor::create({seq_len, hidden_size}, dtype, device_type);
+    tensor_t output = Tensor::create({seq_len, hidden_size}, dtype, device_type, device_id);
 
     ops::add(output, self_attn_output, mlp_out);
     LOG_TENSOR_META_AT("decoder_output:", output);

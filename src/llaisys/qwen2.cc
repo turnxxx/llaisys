@@ -260,7 +260,10 @@ __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model *model, int64_t
         return -1;
     }
     std::vector<int64_t> tokens(token_ids, token_ids + ntoken);
-    auto session = llaisys::model::naive_session::create(impl->config(), tokens);
+    const auto &device_spec = impl->deviceSpec();
+    int device_id = device_spec.device_ids.empty() ? 0 : device_spec.device_ids.front();
+    auto session = llaisys::model::naive_session::create(
+        impl->config(), tokens, device_spec.device_type, device_id);
     auto outputs = impl->inferStep(session);
     return outputs.next_token;
 }

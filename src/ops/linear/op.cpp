@@ -1,6 +1,9 @@
 
 #include "op.hpp"
 #include "./cpu/linear_cpu.hpp"
+#ifdef ENABLE_NVIDIA_API
+#include "./nvidia/linear_nvidia.cuh"
+#endif
 namespace llaisys::ops {
 void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
     if (bias) {
@@ -23,6 +26,14 @@ void linear(tensor_t out, tensor_t in, tensor_t weight, tensor_t bias) {
            "Linear: Invalid shape size");
     ASSERT(in->shape()[0] == out->shape()[0] && in->shape()[1] == weight->shape()[1] && weight->shape()[0] == out->shape()[1],
            "Invalid shape number");
-    return llaisys::ops::cpu::linear(out, in, weight, bias);
+    if (out->deviceType() == LLAISYS_DEVICE_CPU) {
+        return llaisys::ops::cpu::linear(out, in, weight, bias);
+    }
+#ifdef ENABLE_NVIDIA_API
+    if (out->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        return nvidia::linear(out, in, weight, bias);
+    }
+#endif
+    EXCEPTION_UNSUPPORTED_DEVICE;
 }
 } // namespace llaisys::ops

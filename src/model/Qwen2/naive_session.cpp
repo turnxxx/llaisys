@@ -3,7 +3,9 @@
 
 namespace llaisys::model {
 void naive_session::init(const llaisys::model::meta_data &meta_data,
-                         std::vector<int64_t> &tokens) {
+                         std::vector<int64_t> &tokens,
+                         llaisysDeviceType_t device_type,
+                         int device_id) {
     // 初始化naive cache
     size_t head_dim = meta_data.hidden_size / meta_data.num_attention_heads;
     llaisys::KVcache::CacheMeta cache_meta{
@@ -14,7 +16,7 @@ void naive_session::init(const llaisys::model::meta_data &meta_data,
         head_dim,
         meta_data.num_key_value_heads,
         1};
-    kv_cache_ = llaisys::KVcache::NaiveCache::create(cache_meta, LLAISYS_DEVICE_CPU,
+    kv_cache_ = llaisys::KVcache::NaiveCache::create(cache_meta, device_type, device_id,
                                                      meta_data.torch_type, nullptr);
     tokens_ = tokens;
     seq_len_ = tokens.size();

@@ -4,15 +4,20 @@ namespace llaisys::model {
 class naive_session : public ModelSession {
 public:
     ~naive_session() override = default;
-    void init(const llaisys::model::meta_data &meta_data, std::vector<int64_t> &tokens);
+    void init(const llaisys::model::meta_data &meta_data,
+              std::vector<int64_t> &tokens,
+              llaisysDeviceType_t device_type = LLAISYS_DEVICE_CPU,
+              int device_id = 0);
     const std::vector<int64_t> &tokens() const override;
     size_t seq_len() const override;
     size_t token_pos() const override;
     KVcache_t kv_cache() const override;
     static session_t create(const llaisys::model::meta_data &meta_data,
-                            std::vector<int64_t> &tokens) {
+                            std::vector<int64_t> &tokens,
+                            llaisysDeviceType_t device_type = LLAISYS_DEVICE_CPU,
+                            int device_id = 0) {
         auto session_t = std::make_shared<naive_session>();
-        session_t->init(meta_data, tokens);
+        session_t->init(meta_data, tokens, device_type, device_id);
         return session_t;
     }
     void append(int64_t next_token) override;

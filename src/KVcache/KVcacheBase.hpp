@@ -31,6 +31,7 @@ class KVcacheBase {
 
 protected:
     llaisysDeviceType_t device_;
+    int device_id_;
     llaisysDataType_t dtype_;
     llaisys::KVcache::CacheMeta meta_;
     size_t total_bytes_;      // KVcache管理的内存块大小(K的部分)
@@ -43,7 +44,7 @@ public:
     virtual ~KVcacheBase() = default;
     virtual void reset() = 0;
     virtual void init(llaisys::KVcache::CacheMeta meta_,
-                      llaisysDeviceType_t device_, llaisysDataType_t dtype_,
+                      llaisysDeviceType_t device_, int device_id, llaisysDataType_t dtype_,
                       llaisys::KVcache::IKVAllocator *allocator_)
         = 0;
     size_t seq_len();                         // 当前缓存长度(seq长度，而非字节)
@@ -60,5 +61,6 @@ public:
     llaisys::KVcache::CacheMeta meta();
     llaisysDataType_t dtype();
     llaisysDeviceType_t device();
+    int deviceId();
 };
 }; // namespace llaisys::KVcache

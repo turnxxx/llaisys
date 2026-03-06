@@ -15,5 +15,6 @@ tensor_t qwen2_decoder(
     llaisys::KVcache::KVcache_t kv_cache,
     const llaisys::model::meta_data &meta_data,
     size_t token_pos,
-    size_t layer);
+    size_t layer,
+    int device_id = 0);
 }

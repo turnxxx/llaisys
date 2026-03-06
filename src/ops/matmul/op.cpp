@@ -1,5 +1,8 @@
 #include "op.hpp"
 #include "./cpu/matmul_cpu.hpp"
+#ifdef ENABLE_NVIDIA_API
+#include "./nvidia/matmul_nvidia.cuh"
+#endif
 
 namespace llaisys::ops {
 void transpose_matmul(tensor_t c, tensor_t a, tensor_t b, float scale) {
@@ -13,6 +16,14 @@ void transpose_matmul(tensor_t c, tensor_t a, tensor_t b, float scale) {
                && a->shape()[1] == b->shape()[1]
                && b->shape()[0] == c->shape()[1],
            "Matmul: Invalid shape number");
-    return llaisys::ops::cpu::transpose_matmul(c, a, b, scale);
+    if (c->deviceType() == LLAISYS_DEVICE_CPU) {
+        return llaisys::ops::cpu::transpose_matmul(c, a, b, scale);
+    }
+#ifdef ENABLE_NVIDIA_API
+    if (c->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        return nvidia::transpose_matmul(c, a, b, scale);
+    }
+#endif
+    EXCEPTION_UNSUPPORTED_DEVICE;
 }
 } // namespace llaisys::ops

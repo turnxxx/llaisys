@@ -3,6 +3,9 @@
 #include "../../utils.hpp"
 
 #include "cpu/embedding_cpu.hpp"
+#ifdef ENABLE_NVIDIA_API
+#include "./nvidia/embedding_nvidia.cuh"
+#endif
 namespace llaisys::ops {
 void embedding(tensor_t out, tensor_t index, tensor_t weight) {
     ASSERT(weight->shape().size() == 2, "Embedding: shape of weight must be 2-D");
@@ -20,5 +23,11 @@ void embedding(tensor_t out, tensor_t index, tensor_t weight) {
     if (out->deviceType() == LLAISYS_DEVICE_CPU) {
         return llaisys::ops::cpu::embedding(out, index, weight);
     }
+#ifdef ENABLE_NVIDIA_API
+    if (out->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        return nvidia::embedding(out, index, weight);
+    }
+#endif
+    EXCEPTION_UNSUPPORTED_DEVICE;
 }
 } // namespace llaisys::ops

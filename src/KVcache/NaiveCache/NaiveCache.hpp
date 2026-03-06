@@ -14,10 +14,10 @@ public:
     ~NaiveCache() override;
     void reset() override;
     static KVcache_t create(llaisys::KVcache::CacheMeta meta_,
-                            llaisysDeviceType_t device_, llaisysDataType_t dtype_,
+                            llaisysDeviceType_t device_, int device_id, llaisysDataType_t dtype_,
                             llaisys::KVcache::IKVAllocator *allocator_ = nullptr) {
         auto cache = std::make_shared<NaiveCache>();
-        cache->init(meta_, device_, dtype_, allocator_);
+        cache->init(meta_, device_, device_id, dtype_, allocator_);
         LOG_INFO("NaiveCache::create:complete");
 #ifdef LLAISYS_ENABLE_LOG
         if (cache->k_cache_) {
@@ -32,7 +32,7 @@ public:
     }
 
     void init(llaisys::KVcache::CacheMeta meta_,
-              llaisysDeviceType_t device_, llaisysDataType_t dtype_,
+              llaisysDeviceType_t device_, int device_id, llaisysDataType_t dtype_,
               llaisys::KVcache::IKVAllocator *allocator_) override;
     void reserve(size_t max_seq) override;
     bool ensure(size_t seq_len) override;

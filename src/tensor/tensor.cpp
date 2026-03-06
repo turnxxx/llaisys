@@ -234,13 +234,10 @@ tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
 // 将主机（cpu）数据加载到张量（可以在设备上）。
 // 查看构造函数了解如何获取当前设备上下文的运行时API，并执行从主机到设备的内存复制。
 void Tensor::load(const void *src_) {
-    // step1:获取运行时设备类型
-    llaisysDeviceType_t device_type = core::context().runtime().deviceType();
-    if (device_type == LLAISYS_DEVICE_CPU) {
-        // 当前上下文在cpu上
+    if (this->deviceType() == LLAISYS_DEVICE_CPU) {
         std::memcpy(this->data(), src_, this->numel() * this->elementSize());
     } else {
-        // 当前上下文在设备上，同步拷贝
+        core::context().setDevice(this->deviceType(), this->deviceId());
         core::context().runtime().api()->memcpy_sync(this->data(), src_, this->numel() * this->elementSize(), LLAISYS_MEMCPY_H2D);
     }
 }
@@ -249,8 +246,6 @@ tensor_t Tensor::contiguous() const {
     if (isContiguous()) {
         return std::shared_ptr<Tensor>(new Tensor(_meta, _storage, _offset));
     }
-    ASSERT(this->deviceType() == LLAISYS_DEVICE_CPU,
-           "contiguous: only CPU tensors are supported for now");
     auto result = Tensor::create(this->shape(), this->dtype(), this->deviceType(), this->deviceId());
     llaisys::ops::rearrange(result, std::shared_ptr<Tensor>(new Tensor(_meta, _storage, _offset)));
     return result;
@@ -264,8 +259,48 @@ tensor_t Tensor::reshape(const std::vector<size_t> &shape) const {
 }
 
 tensor_t Tensor::to(llaisysDeviceType_t device_type, int device) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    int target_device = device;
+    if (target_device < 0) {
+        target_device = (device_type == this->deviceType()) ? this->deviceId() : 0;
+    }
+    if (device_type == this->deviceType() && target_device == this->deviceId()) {
+        return std::shared_ptr<Tensor>(new Tensor(_meta, _storage, _offset));
+    }
+
+    auto dst = Tensor::create(this->shape(), this->dtype(), device_type, target_device);
+
+    llaisysMemcpyKind_t memcpy_kind = LLAISYS_MEMCPY_D2D;
+    if (this->deviceType() == LLAISYS_DEVICE_CPU && device_type == LLAISYS_DEVICE_CPU) {
+        memcpy_kind = LLAISYS_MEMCPY_H2H;
+    } else if (this->deviceType() == LLAISYS_DEVICE_CPU && device_type != LLAISYS_DEVICE_CPU) {
+        memcpy_kind = LLAISYS_MEMCPY_H2D;
+    } else if (this->deviceType() != LLAISYS_DEVICE_CPU && device_type == LLAISYS_DEVICE_CPU) {
+        memcpy_kind = LLAISYS_MEMCPY_D2H;
+    }
+
+    if (this->deviceType() != LLAISYS_DEVICE_CPU
+        && device_type != LLAISYS_DEVICE_CPU
+        && this->deviceId() != target_device) {
+        ASSERT(false, "Tensor::to currently does not support cross-device D2D copy");
+    }
+
+    if (memcpy_kind == LLAISYS_MEMCPY_H2H) {
+        std::memcpy(dst->data(), this->data(), this->numel() * this->elementSize());
+        return dst;
+    }
+
+    // H2D 必须在目标设备 runtime 下执行，D2H/D2D 在源设备 runtime 下执行。
+    if (memcpy_kind == LLAISYS_MEMCPY_H2D) {
+        core::context().setDevice(device_type, target_device);
+    } else {
+        core::context().setDevice(this->deviceType(), this->deviceId());
+    }
+    core::context().runtime().api()->memcpy_sync(
+        dst->data(),
+        this->data(),
+        this->numel() * this->elementSize(),
+        memcpy_kind);
+    return dst;
 }
 
 } // namespace llaisys

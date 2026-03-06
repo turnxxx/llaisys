@@ -41,4 +41,7 @@ llaisysDataType_t KVcacheBase::dtype() {
 llaisysDeviceType_t KVcacheBase::device() {
     return this->device_;
 }
+int KVcacheBase::deviceId() {
+    return this->device_id_;
+}
 } // namespace llaisys::KVcache

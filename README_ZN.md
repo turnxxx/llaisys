@@ -391,6 +391,57 @@ python test/test_runtime.py --device nvidia
 python test/test_infer.py --model [dir_path/to/model] --test --device nvidia
 ```
 
+### 当前仓库中的 GPU 端骨架（已补齐）
+
+下面这部分是当前代码里已经搭好的 GPU 端框架，方便你后续直接填 CUDA 实现：
+
+- **GPU 编译入口**
+  - 新增 `xmake/nvidia.lua`，定义了 `llaisys-device-nvidia` 和 `llaisys-ops-nvidia` 两个静态库目标。
+  - `xmake.lua` 已接入 `--nv-gpu=y` 时的依赖链，不开启时不会编译 CUDA 代码。
+
+- **GPU 运行时与资源结构**
+  - `src/device/nvidia/nvidia_runtime_api.cu` 保留了完整 Runtime API 函数位点（设备、流、内存、拷贝），目前为占位实现，后续可逐个替换为 CUDA Runtime 调用。
+  - `src/device/nvidia/nvidia_common.cuh` 增加了 GPU 通用数据结构：
+    - `DeviceBufferView`：设备内存块描述
+    - `KernelLaunchConfig`：kernel 启动参数描述
+    - `OpExecutionContext`：算子执行上下文（设备 + 流）
+  - `src/device/nvidia/nvidia_resource.cuh/.cu` 扩展了 `Resource`，可携带 `OpExecutionContext` 供算子层复用。
+
+- **GPU 算子接口（未实现算子逻辑）**
+  - 已在每个算子目录下新增 `nvidia/` 子目录，并提供独立接口声明与实现占位（`.cuh + .cu`）：
+    - `src/ops/add/nvidia`
+    - `src/ops/argmax/nvidia`
+    - `src/ops/embedding/nvidia`
+    - `src/ops/linear/nvidia`
+    - `src/ops/matmul/nvidia`
+    - `src/ops/rearrange/nvidia`
+    - `src/ops/rms_norm/nvidia`
+    - `src/ops/rope/nvidia`
+    - `src/ops/self_attention/nvidia`
+    - `src/ops/swiglu/nvidia`
+  - 现有各算子入口 `src/ops/*/op.cpp` 已统一改为：
+    - CPU 路径：调用 `ops::cpu::*`
+    - NVIDIA 路径：调用 `ops::nvidia::*`（当前为 `TO_BE_IMPLEMENTED()` 占位）
+
+- **Tensor 的 GPU 侧操作语义**
+  - `Tensor::load()`：按目标张量所在设备执行 H2H/H2D 加载，不再依赖“当前上下文设备”。
+  - `Tensor::to()`：支持 CPU/GPU 间数据迁移（H2H/H2D/D2H/D2D 路径选择）；同设备返回共享存储视图。
+  - `Tensor::contiguous()`：移除“仅 CPU”限制，改为统一通过 `ops::rearrange()` 做重排（GPU 具体实现由你后续补齐）。
+
+### 继续实现 GPU 的建议顺序
+
+1. 先补 `nvidia_runtime_api.cu`（`get_device_count`、`malloc/free`、`memcpy`、stream API）。
+2. 再补 `ops/nvidia/op_api.cu` 里的 `rearrange`、`add`、`matmul/linear`（优先高频路径）。
+3. 最后补 `rms_norm/rope/self_attention/swiglu/embedding/argmax` 并联调 `test/ops/*.py`。
+
+推荐编译命令：
+
+```bash
+xmake f --nv-gpu=y -cv
+xmake -r
+xmake install
+```
+
 ## 项目#3：构建 AI 聊天机器人
 
 本项目中，你将用 LLAISYS 构建一个能与单用户实时对话的聊天机器人。

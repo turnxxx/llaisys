@@ -1,6 +1,9 @@
 #include "op.hpp"
 
 #include "cpu/argmax_cpu.hpp"
+#ifdef ENABLE_NVIDIA_API
+#include "./nvidia/argmax_nvidia.cuh"
+#endif
 
 namespace llaisys::ops {
 void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
@@ -22,5 +25,11 @@ void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
                            static_cast<size_t>(vals->strides()[0]),
                            vals->dtype());
     }
+#ifdef ENABLE_NVIDIA_API
+    if (vals->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        return nvidia::argmax(max_idx, max_val, vals);
+    }
+#endif
+    EXCEPTION_UNSUPPORTED_DEVICE;
 }
 } // namespace llaisys::ops

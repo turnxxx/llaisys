@@ -1,33 +1,51 @@
 #include "model_qwen2.hpp"
 #include "../../ops/ops.hpp"
 #include "../../utils.hpp"
+#include "../../core/llaisys_core.hpp"
 #include "naive_session.hpp"
-#include <cstring>
 #include <string>
 
 namespace llaisys::model {
 // 加载权重，根据运行时的不同设备来把权重加载到不同文件上
 void Model_Qwen2::loadWeights(WeightsMap &weights) {
+    int target_device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
+
+    auto load_no_parallel_to_device = [&](llaisysDeviceType_t target_device_type) {
+        WeightsMap loaded;
+        loaded.reserve(weights.size());
+        for (auto &entry : weights) {
+            ASSERT(entry.second != nullptr, "Model_Qwen2::loadWeights: null weight pointer for " + entry.first);
+            const auto &src_tensor = entry.second->weights();
+            ASSERT(src_tensor != nullptr, "Model_Qwen2::loadWeights: null tensor for " + entry.first);
+            auto dst_tensor = src_tensor->to(target_device_type, target_device_id);
+            loaded[entry.first] = std::make_shared<llaisys::Weights>(entry.first, dst_tensor);
+        }
+        this->weights_ = std::move(loaded);
+    };
+
     switch (this->_device.device_type) {
     case LLAISYS_DEVICE_CPU:
-        // TODO: load weights for CPU
         // 根据并行类型选择权重加载
         // 不并行的情况
         if (this->_parallel.tensor_parallel == 0
             && this->_parallel.pipeline_parallel == 0
             && this->_parallel.data_parallel == 0) {
-            this->weights_ = std::move(weights);
+            load_no_parallel_to_device(LLAISYS_DEVICE_CPU);
         } else {
             throw "Parallel is not supported yet";
         }
         break;
     case LLAISYS_DEVICE_NVIDIA:
-        // TODO: load weights for NVIDIA
-        // Comming Soon
-        throw "Nvidia is not supported yet";
+        if (this->_parallel.tensor_parallel == 0
+            && this->_parallel.pipeline_parallel == 0
+            && this->_parallel.data_parallel == 0) {
+            load_no_parallel_to_device(LLAISYS_DEVICE_NVIDIA);
+        } else {
+            throw "Parallel is not supported yet";
+        }
         break;
     default:
-        break;
+        EXCEPTION_UNSUPPORTED_DEVICE;
     }
     parseWeight();
     this->show();
@@ -50,7 +68,8 @@ void Model_Qwen2::unloadWeights() {
 std::unique_ptr<ModelSession> Model_Qwen2::createSession() {
     auto session = std::make_unique<naive_session>();
     std::vector<int64_t> tokens;
-    session->init(_config, tokens);
+    int device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
+    session->init(_config, tokens, _device.device_type, device_id);
     return session;
 }
 
@@ -60,7 +79,8 @@ void Model_Qwen2::resetSession(ModelSession &session) {
         return;
     }
     std::vector<int64_t> tokens;
-    naive->init(_config, tokens);
+    int device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
+    naive->init(_config, tokens, _device.device_type, device_id);
 }
 
 void Model_Qwen2::destroy() {
@@ -90,6 +110,7 @@ InferenceOutputs Model_Qwen2::inferStep(session_t session) {
     ASSERT(qwen2_weights.layers.size() == _config.num_hidden_layers,
            "Model_Qwen2::inferStep: layers size mismatch");
 
+    int device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
     size_t token_pos = 0;
     tensor_t hidden_states;
     if (session->kv_cache()->seq_len() == 0) {
@@ -101,10 +122,10 @@ InferenceOutputs Model_Qwen2::inferStep(session_t session) {
         token_pos = tokens.size() - 1;
         std::vector<int64_t> last_token{tokens.back()};
         std::vector<size_t> token_shape{1};
-        tensor_t token_ids = Tensor::create(token_shape, LLAISYS_DTYPE_I64, _device.device_type);
+        tensor_t token_ids = Tensor::create(token_shape, LLAISYS_DTYPE_I64, _device.device_type, device_id);
         token_ids->load(last_token.data());
         std::vector<size_t> out_shape{1, _config.hidden_size};
-        hidden_states = Tensor::create(out_shape, _config.torch_type, _device.device_type);
+        hidden_states = Tensor::create(out_shape, _config.torch_type, _device.device_type, device_id);
         ops::embedding(hidden_states, token_ids, qwen2_weights.embed_tokens->weights());
     }
     if (token_pos == 0) {
@@ -125,24 +146,32 @@ InferenceOutputs Model_Qwen2::inferStep(session_t session) {
         ASSERT(layer.mlp.gate != nullptr && layer.mlp.up != nullptr && layer.mlp.down != nullptr,
                "Model_Qwen2::inferStep: mlp weights are null");
         hidden_states = llaisys::Qwen2::qwen2_decoder(
-            hidden_states, qwen2_weights.layers[i], session->kv_cache(), _config, token_pos, i);
+            hidden_states, qwen2_weights.layers[i], session->kv_cache(), _config, token_pos, i, device_id);
     }
 
-    tensor_t normed = Tensor::create(hidden_states->shape(), _config.torch_type, _device.device_type);
+    tensor_t normed = Tensor::create(hidden_states->shape(), _config.torch_type, _device.device_type, device_id);
     ops::rms_norm(normed, hidden_states, qwen2_weights.final_norm->weights(), _config.rms_norm_eps);
 
     std::vector<size_t> logits_shape{hidden_states->shape()[0], _config.vocab_size};
-    tensor_t logits = Tensor::create(logits_shape, _config.torch_type, _device.device_type);
+    tensor_t logits = Tensor::create(logits_shape, _config.torch_type, _device.device_type, device_id);
     ops::linear(logits, normed, qwen2_weights.lm_head->weights(), nullptr);
 
     const size_t seq_len = logits->shape()[0];
     tensor_t last_row = logits->slice(0, seq_len - 1, seq_len)->reshape({_config.vocab_size});
-    tensor_t max_idx = Tensor::create({1}, LLAISYS_DTYPE_I64, _device.device_type);
-    tensor_t max_val = Tensor::create({1}, _config.torch_type, _device.device_type);
+    tensor_t max_idx = Tensor::create({1}, LLAISYS_DTYPE_I64, _device.device_type, device_id);
+    tensor_t max_val = Tensor::create({1}, _config.torch_type, _device.device_type, device_id);
     ops::argmax(max_idx, max_val, last_row);
 
     int64_t next_token = 0;
-    std::memcpy(&next_token, max_idx->data(), sizeof(int64_t));
+    llaisysMemcpyKind_t kind = max_idx->deviceType() == LLAISYS_DEVICE_CPU
+                                   ? LLAISYS_MEMCPY_H2H
+                                   : LLAISYS_MEMCPY_D2H;
+    llaisys::core::context().setDevice(max_idx->deviceType(), max_idx->deviceId());
+    llaisys::core::context().runtime().api()->memcpy_sync(
+        &next_token,
+        max_idx->data(),
+        sizeof(int64_t),
+        kind);
 
     session->append(next_token);
 
@@ -159,7 +188,8 @@ std::vector<int64_t> Model_Qwen2::inferDialog(std::vector<int64_t> &tokens,
     if (tokens.empty()) {
         tokens.push_back(bos_token_id);
     }
-    auto session = naive_session::create(_config, tokens);
+    int device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
+    auto session = naive_session::create(_config, tokens, _device.device_type, device_id);
     for (size_t i = 0; i < max_steps; ++i) {
         auto outputs = inferStep(session);
         LOG_INFO("step=" << i
@@ -182,12 +212,13 @@ tensor_t Model_Qwen2::inferInit(session_t session) {
     ASSERT(qwen2_weights.embed_tokens != nullptr,
            "Model_Qwen2::inferInit: embed_tokens weight is null");
 
+    int device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
     std::vector<size_t> token_shape{tokens.size()};
-    tensor_t token_ids = Tensor::create(token_shape, LLAISYS_DTYPE_I64, _device.device_type);
+    tensor_t token_ids = Tensor::create(token_shape, LLAISYS_DTYPE_I64, _device.device_type, device_id);
     token_ids->load(tokens.data());
 
     std::vector<size_t> out_shape{tokens.size(), _config.hidden_size};
-    tensor_t hidden_states = Tensor::create(out_shape, _config.torch_type, _device.device_type);
+    tensor_t hidden_states = Tensor::create(out_shape, _config.torch_type, _device.device_type, device_id);
     ops::embedding(hidden_states, token_ids, qwen2_weights.embed_tokens->weights());
     LOG_TENSOR_DEBUG("Model_Qwen2::inferInit::hidden_states", hidden_states);
     LOG_INFO("Model_Qwen2::inferInit: complete");
