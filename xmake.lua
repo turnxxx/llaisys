@@ -1,6 +1,11 @@
 add_rules("mode.debug", "mode.release")
 set_encodings("utf-8")
 
+if not is_plat("windows") then
+    add_cxflags("-fPIC", {force = true})
+    add_asflags("-fPIC", {force = true})
+end
+
 add_includedirs("include")
 add_includedirs(".")
 add_includedirs("src")
@@ -144,12 +149,22 @@ target_end()
 
 target("llaisys")
     set_kind("shared")
+    if has_config("nv-gpu") then
+        -- Ensure CUDA device-link runs for the final shared library.
+        add_rules("cuda")
+        add_links("cublas", "cublasLt")
+        local conda_prefix = os.getenv("CONDA_PREFIX")
+        if conda_prefix and #conda_prefix > 0 then
+            local conda_lib = path.join(conda_prefix, "lib")
+            add_linkdirs(conda_lib)
+            add_rpathdirs(conda_lib)
+        end
+    end
     add_deps("llaisys-utils")
     add_deps("llaisys-device")
     add_deps("llaisys-device-cpu")
     add_deps("llaisys-core")
     add_deps("llaisys-tensor")
-    add_deps("llaisys-ops")
     add_deps("llaisys-ops-cpu")
     -- 注意：不依赖 llaisys-model，直接编译源文件避免链接问题
 
@@ -158,6 +173,12 @@ target("llaisys")
     
     -- C API 接口层
     add_files("src/llaisys/*.cc")
+    add_files("src/ops/*/op.cpp")
+    if has_config("nv-gpu") then
+        -- Compile CUDA sources into final shared library to keep
+        -- __cudaRegisterLinkedBinary symbols resolved at load time.
+        add_files("src/ops/*/nvidia/*.cu")
+    end
     
     -- 直接编译模型相关源文件到共享库（确保符号被导出）
     add_files("src/model/*.cpp")

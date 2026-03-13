@@ -27,9 +27,9 @@ def test_op_add(
     c, c_ = random_tensor(shape, dtype_name, device_name)
     torch_add(c, a, b)
     llaisys.Ops.add(c_, a_, b_)
-
+    
     assert check_equal(c_, c, atol=atol, rtol=rtol)
-
+     
     if profile:
         benchmark(
             lambda: torch_add(c, a, b),

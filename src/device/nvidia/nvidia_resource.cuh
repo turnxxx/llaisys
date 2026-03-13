@@ -13,5 +13,8 @@ public:
     ~Resource();
 
     const OpExecutionContext &opContext() const;
+    void setStream(llaisysStream_t stream);
 };
+
+Resource &getResource(int device_id);
 } // namespace llaisys::device::nvidia

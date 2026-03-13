@@ -2,6 +2,7 @@
 
 #include "llaisys.h"
 
+#include <cublas_v2.h>
 #include <cstddef>
 
 namespace llaisys::device::nvidia {
@@ -26,9 +27,11 @@ struct KernelLaunchConfig {
 };
 
 // Per-op execution context for future CUDA integration.
+// cublas的handle也放在这里
 struct OpExecutionContext {
     int device_id{0};
     llaisysStream_t stream{nullptr};
+    cublasHandle_t cublas_handle{nullptr};
 };
 
 } // namespace llaisys::device::nvidia
