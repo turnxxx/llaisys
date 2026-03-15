@@ -39,6 +39,7 @@ struct meta_data {
     bool use_cache;
     bool use_mrope;
     bool use_sliding_window;
+    bool use_paged_attention = true;
     size_t vocab_size;
 };
 // 从config解析模型参数

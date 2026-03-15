@@ -271,6 +271,7 @@ void Model_Qwen2::show() {
     LOG_INFO("  rms_eps=" << _config.rms_norm_eps
                           << " rope_theta=" << _config.rope_theta
                           << " use_cache=" << _config.use_cache
+                          << " use_paged_attention=" << _config.use_paged_attention
                           << " use_mrope=" << _config.use_mrope
                           << " use_sliding_window=" << _config.use_sliding_window
                           << " sliding_window=" << _config.sliding_window

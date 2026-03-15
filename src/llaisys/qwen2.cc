@@ -63,6 +63,7 @@ __export struct LlaisysQwen2Model *llaisysQwen2ModelCreate(
     cfg.use_cache = meta->use_cache != 0;
     cfg.use_mrope = meta->use_mrope != 0;
     cfg.use_sliding_window = meta->use_sliding_window != 0;
+    cfg.use_paged_attention = true;
 
     llaisys::model::DeviceSpec spec{};
     spec.device_type = device;

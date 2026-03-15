@@ -1,5 +1,6 @@
 #include "op.hpp"
 #include "./cpu/self_attention_cpu.hpp"
+#include <stdexcept>
 #ifdef ENABLE_NVIDIA_API
 #include "./nvidia/self_attention_nvidia.cuh"
 #endif
@@ -19,6 +20,37 @@ void self_attention(tensor_t attn_val, tensor_t q, tensor_t k, tensor_t v, float
 #ifdef ENABLE_NVIDIA_API
     if (attn_val->deviceType() == LLAISYS_DEVICE_NVIDIA) {
         return nvidia::self_attention(attn_val, q, k, v, scale);
+    }
+#endif
+    EXCEPTION_UNSUPPORTED_DEVICE;
+}
+
+void self_attention_paged(tensor_t attn_val,
+                          tensor_t q,
+                          tensor_t paged_kv_data,
+                          tensor_t kv_indptr,
+                          tensor_t kv_indices,
+                          tensor_t kv_last_page_len,
+                          int page_size,
+                          float scale) {
+    CHECK_SAME_DEVICE(attn_val, q, paged_kv_data, kv_indptr, kv_indices, kv_last_page_len);
+    CHECK_SAME_DTYPE(attn_val->dtype(), q->dtype(), paged_kv_data->dtype());
+    ASSERT(kv_indptr->dtype() == LLAISYS_DTYPE_I32, "SelfAttentionPaged: kv_indptr dtype must be int32");
+    ASSERT(kv_indices->dtype() == LLAISYS_DTYPE_I32, "SelfAttentionPaged: kv_indices dtype must be int32");
+    ASSERT(kv_last_page_len->dtype() == LLAISYS_DTYPE_I32,
+           "SelfAttentionPaged: kv_last_page_len dtype must be int32");
+    ASSERT(attn_val->isContiguous() && q->isContiguous() && paged_kv_data->isContiguous()
+               && kv_indptr->isContiguous() && kv_indices->isContiguous()
+               && kv_last_page_len->isContiguous(),
+           "SelfAttentionPaged: inputs must be contiguous");
+
+    if (attn_val->deviceType() == LLAISYS_DEVICE_CPU) {
+        throw std::runtime_error("SelfAttentionPaged: CPU backend is not implemented");
+    }
+#ifdef ENABLE_NVIDIA_API
+    if (attn_val->deviceType() == LLAISYS_DEVICE_NVIDIA) {
+        return nvidia::self_attention_paged(
+            attn_val, q, paged_kv_data, kv_indptr, kv_indices, kv_last_page_len, page_size, scale);
     }
 #endif
     EXCEPTION_UNSUPPORTED_DEVICE;

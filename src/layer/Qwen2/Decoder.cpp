@@ -1,4 +1,5 @@
 #include "Decoder.hpp"
+#include "../../KVcache/pagedCache/PagedCache.hpp"
 #include <cmath>
 namespace llaisys::Qwen2 {
 // 一次decoder计算
@@ -75,18 +76,36 @@ tensor_t qwen2_decoder(tensor_t &hidden_states,
     ops::rope(k_rope, k_3d, pos_ids, rope_theta);
     LOG_TENSOR_META_AT("q_rope:", q_rope);
     LOG_TENSOR_META_AT("k_rope:", k_rope);
+    auto paged_cache = std::dynamic_pointer_cast<llaisys::KVcache::PagedCache>(kv_cache);
     // 存入KVcache
-    kv_cache->append(layer, k_rope, v_3d);
+    kv_cache->append(layer, k_rope, v_3d, token_pos);
     // GQA
     tensor_t attn_val = Tensor::create(q_rope->shape(), dtype, device_type, device_id);
     float scale = 1 / sqrt(static_cast<float>(head_dim));
-    // 从KV_cache里取出张量
-    tensor_t k_attn;
-    tensor_t v_attn;
-    kv_cache->get(k_attn, v_attn, layer);
-    LOG_TENSOR_META_AT("k_attn:", k_attn);
-    LOG_TENSOR_META_AT("v_attn:", v_attn);
-    ops::self_attention(attn_val, q_rope, k_attn, v_attn, scale);
+    if (paged_cache && seq_len == 1 && device_type == LLAISYS_DEVICE_NVIDIA) {
+        // decode 场景使用 paged attention；prefill 仍走普通 self-attention。
+        ops::self_attention_paged(attn_val,
+                                  q_rope,
+                                  paged_cache->paged_kv_data(layer),
+                                  paged_cache->kv_indptr(),
+                                  paged_cache->kv_indices(),
+                                  paged_cache->kv_last_page_len(),
+                                  paged_cache->block_size(),
+                                  scale);
+    } else {
+        tensor_t k_attn;
+        tensor_t v_attn;
+        if (paged_cache) {
+            // paged cache 不支持直接 get，prefill 阶段可直接用本次 K/V。
+            k_attn = k_rope;
+            v_attn = v_3d;
+        } else {
+            kv_cache->get(k_attn, v_attn, layer);
+            LOG_TENSOR_META_AT("k_attn:", k_attn);
+            LOG_TENSOR_META_AT("v_attn:", v_attn);
+        }
+        ops::self_attention(attn_val, q_rope, k_attn, v_attn, scale);
+    }
     LOG_TENSOR_META_AT("attn_val", attn_val);
     tensor_t attn_val_2d = attn_val->reshape({seq_len, hidden_size});
     LOG_TENSOR_META_AT("attn_val_2d", attn_val_2d);

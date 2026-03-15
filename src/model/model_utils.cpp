@@ -243,6 +243,8 @@ void Model_Config::read_from_config(const std::string &config_path)
     meta_data.use_cache = get_optional_bool(config_json, "use_cache", false);
     meta_data.use_mrope = get_optional_bool(config_json, "use_mrope", false);
     meta_data.use_sliding_window = get_optional_bool(config_json, "use_sliding_window", false);
+    meta_data.use_paged_attention =
+        get_optional_bool(config_json, "use_paged_attention", true);
     meta_data.vocab_size = get_required_size_t(config_json, "vocab_size");
 }
 

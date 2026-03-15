@@ -19,6 +19,7 @@ void launch_flashinfer_decode_fp16_h128_pagedattn(
     int num_qo_heads,
     int num_kv_heads,
     int page_size,
+    float sm_scale,
     void* workspace,
     size_t workspace_size,
     cudaStream_t stream);
@@ -34,6 +35,7 @@ void launch_flashinfer_decode_fp32_h128_pagedattn(
     int num_qo_heads,
     int num_kv_heads,
     int page_size,
+    float sm_scale,
     void* workspace,
     size_t workspace_size,
     cudaStream_t stream);
@@ -49,6 +51,7 @@ void launch_flashinfer_decode_bf16_h128_pagedattn(
     int num_qo_heads,
     int num_kv_heads,
     int page_size,
+    float sm_scale,
     void* workspace,
     size_t workspace_size,
     cudaStream_t stream);
