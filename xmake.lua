@@ -30,6 +30,7 @@ option_end()
 
 if has_config("nv-gpu") then
     add_defines("ENABLE_NVIDIA_API")
+    add_cugencodes("native")
     includes("xmake/nvidia.lua")
 end
 
@@ -166,6 +167,9 @@ target("llaisys")
     add_deps("llaisys-core")
     add_deps("llaisys-tensor")
     add_deps("llaisys-ops-cpu")
+    if has_config("nv-gpu") then
+        add_deps("llaisys-flashinfer")
+    end
     -- 注意：不依赖 llaisys-model，直接编译源文件避免链接问题
 
     set_languages("cxx17")

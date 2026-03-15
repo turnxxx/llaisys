@@ -52,6 +52,9 @@ public:
     // Load data from host memory
     void load(const void *src);
 
+    // Swap underlying storage with another tensor (zero-copy ownership transfer)
+    void swapStorage(Tensor &other);
+
     // Challenging features
     tensor_t contiguous() const;
     tensor_t reshape(const std::vector<size_t> &shape) const;

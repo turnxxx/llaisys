@@ -28,6 +28,15 @@ void checkCublas(cublasStatus_t status, const char *op) {
         throw std::runtime_error("cuBLAS call failed");
     }
 }
+
+void checkCublasLt(cublasStatus_t status, const char *op) {
+    if (status != CUBLAS_STATUS_SUCCESS) {
+        std::cerr << "[ERROR] cuBLASLt call failed: " << op
+                  << ", status=" << static_cast<int>(status) << "."
+                  << std::endl;
+        throw std::runtime_error("cuBLASLt call failed");
+    }
+}
 } // namespace
 
 Resource::Resource(int device_id)
@@ -36,6 +45,7 @@ Resource::Resource(int device_id)
     _op_ctx.stream = nullptr;
     checkCuda(cudaSetDevice(device_id), "cudaSetDevice");
     checkCublas(cublasCreate(&_op_ctx.cublas_handle), "cublasCreate");
+    checkCublasLt(cublasLtCreate(&_op_ctx.cublaslt_handle), "cublasLtCreate");
     checkCublas(cublasSetStream(_op_ctx.cublas_handle,
                                 reinterpret_cast<cudaStream_t>(_op_ctx.stream)),
                 "cublasSetStream");
@@ -45,6 +55,10 @@ Resource::~Resource() {
     if (_op_ctx.cublas_handle != nullptr) {
         checkCublas(cublasDestroy(_op_ctx.cublas_handle), "cublasDestroy");
         _op_ctx.cublas_handle = nullptr;
+    }
+    if (_op_ctx.cublaslt_handle != nullptr) {
+        checkCublasLt(cublasLtDestroy(_op_ctx.cublaslt_handle), "cublasLtDestroy");
+        _op_ctx.cublaslt_handle = nullptr;
     }
 }
 

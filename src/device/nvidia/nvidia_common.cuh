@@ -2,6 +2,7 @@
 
 #include "llaisys.h"
 
+#include <cublasLt.h>
 #include <cublas_v2.h>
 #include <cstddef>
 
@@ -32,6 +33,7 @@ struct OpExecutionContext {
     int device_id{0};
     llaisysStream_t stream{nullptr};
     cublasHandle_t cublas_handle{nullptr};
+    cublasLtHandle_t cublaslt_handle{nullptr};
 };
 
 } // namespace llaisys::device::nvidia

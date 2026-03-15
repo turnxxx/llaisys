@@ -15,6 +15,9 @@ def random_tensor(
     if bias is not None:
         torch_tensor += bias
 
+    if device_name != "cpu":
+        torch.cuda.synchronize()
+
     llaisys_tensor = llaisys.Tensor(
         shape,
         dtype=llaisys_dtype(dtype_name),
@@ -113,6 +116,35 @@ def arrange_tensor(
     return torch_tensor, llaisys_tensor
 
 
+def to_torch(llaisys_tensor: llaisys.Tensor) -> torch.Tensor:
+    shape = llaisys_tensor.shape()
+    strides = llaisys_tensor.strides()
+
+    right = 0
+    for i in range(len(shape)):
+        if strides[i] > 0:
+            right += strides[i] * (shape[i] - 1)
+        else:
+            raise ValueError("Negative strides are not supported yet")
+
+    tmp = torch.zeros(
+        (right + 1,),
+        dtype=torch_dtype(dtype_name(llaisys_tensor.dtype())),
+        device=torch_device(
+            device_name(llaisys_tensor.device_type()), llaisys_tensor.device_id()
+        ),
+    )
+    result = torch.as_strided(tmp, shape, strides)
+    api = llaisys.RuntimeAPI(llaisys_tensor.device_type())
+    api.memcpy_sync(
+        result.data_ptr(),
+        llaisys_tensor.data_ptr(),
+        (right + 1) * tmp.element_size(),
+        llaisys.MemcpyKind.D2D,
+    )
+    return result
+
+
 def check_equal(
     llaisys_result: llaisys.Tensor,
     torch_answer: torch.Tensor,
@@ -120,33 +152,10 @@ def check_equal(
     rtol=1e-5,
     strict=False,
 ):
-    shape = llaisys_result.shape()
-    strides = llaisys_result.strides()
-    assert shape == torch_answer.shape
+    assert llaisys_result.shape() == torch_answer.shape
     assert torch_dtype(dtype_name(llaisys_result.dtype())) == torch_answer.dtype
 
-    right = 0
-    for i in range(len(shape)):
-        if strides[i] > 0:
-            right += strides[i] * (shape[i] - 1)
-        else:  # TODO: Support negative strides in the future
-            raise ValueError("Negative strides are not supported yet")
-
-    tmp = torch.zeros(
-        (right + 1,),
-        dtype=torch_answer.dtype,
-        device=torch_device(
-            device_name(llaisys_result.device_type()), llaisys_result.device_id()
-        ),
-    )
-    result = torch.as_strided(tmp, shape, strides)
-    api = llaisys.RuntimeAPI(llaisys_result.device_type())
-    api.memcpy_sync(
-        result.data_ptr(),
-        llaisys_result.data_ptr(),
-        (right + 1) * tmp.element_size(),
-        llaisys.MemcpyKind.D2D,
-    )
+    result = to_torch(llaisys_result)
 
     if strict:
         if torch.equal(result, torch_answer):

@@ -1,94 +1,21 @@
-# Xmake cache
-.xmake/
-build/
+# 模型权重
+models/
 
-# Binaries
-bin/
-lib/
+# xmake 构建产物
+build/
+.xmake/
+
+# 编译输出
+*.o
+*.a
 *.so
 *.dll
-*.dylib
-*.pyd
-
-# MacOS Cache
-.DS_Store
-
-# Vscode
-.vscode/
 
 # Python
 __pycache__/
-
-# Log
-*.log
-
-# Cache
-cache/
-
-# JSON
-*.json
-
-#GGUF
-*.gguf
-
-
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Distribution / packaging
-build/
-dist/
+*.pyc
 *.egg-info/
-.eggs/
+dist/
 
-# Virtual environments
-.venv/
-env/
-venv/
-ENV/
-*.env
-*.venv
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# MyPy and other type checking
-.mypy_cache/
-.dmypy.json
-.pyre/
-
-# Test and coverage
-.coverage
-htmlcov/
-.tox/
-.nox/
-.cache/
-.pytest_cache/
-
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints
-
-# IDE and editor settings
-.vscode/
-.idea/
-*.swp
-*~
-
-# macOS
-.DS_Store
-
-# Windows
-Thumbs.db
-ehthumbs.db
-desktop.ini
-
-models_weight/
-model.safetensors*
-quick_test
+# 日志
+*.log

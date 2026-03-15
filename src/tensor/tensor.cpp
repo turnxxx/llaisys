@@ -242,6 +242,11 @@ void Tensor::load(const void *src_) {
     }
 }
 
+void Tensor::swapStorage(Tensor &other) {
+    std::swap(_storage, other._storage);
+    std::swap(_offset, other._offset);
+}
+
 tensor_t Tensor::contiguous() const {
     if (isContiguous()) {
         return std::shared_ptr<Tensor>(new Tensor(_meta, _storage, _offset));

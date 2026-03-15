@@ -1,8 +1,9 @@
 import sys
 import os
 
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, parent_dir)
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+sys.path.insert(0, os.path.join(project_root, "python"))
+sys.path.insert(0, os.path.join(project_root, "test"))
 import llaisys
 import torch
 from test_utils import random_tensor, check_equal, benchmark
@@ -27,6 +28,10 @@ def test_op_swiglu(
     out, out_ = random_tensor(shape, dtype_name, device_name)
     torch_swiglu(out, gate, up)
     llaisys.Ops.swiglu(out_, gate_, up_)
+    if device_name == "nvidia":
+        torch.cuda.synchronize()
+        api = llaisys.RuntimeAPI(llaisys.DeviceType.NVIDIA)
+        api.device_synchronize()
 
     assert check_equal(out_, out, atol=atol, rtol=rtol)
 
