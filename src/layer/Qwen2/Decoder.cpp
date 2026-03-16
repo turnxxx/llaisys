@@ -1,15 +1,14 @@
 #include "Decoder.hpp"
 #include "../../KVcache/pagedCache/PagedCache.hpp"
+#include "../../core/llaisys_core.hpp"
 #include <cmath>
+#ifdef ENABLE_NVIDIA_API
+#include <cuda_runtime.h>
+#endif
 namespace llaisys::Qwen2 {
 // 一次decoder计算
-tensor_t qwen2_decoder(tensor_t &hidden_states,
-                       const layer_weights &weights,
-                       llaisys::KVcache::KVcache_t kv_cache,
-                       const llaisys::model::meta_data &meta_data,
-                       size_t token_pos,
-                       size_t layer,
-                       int device_id) {
+tensor_t qwen2_decoder(tensor_t& hidden_states, const layer_weights& weights, llaisys::KVcache::KVcache_t kv_cache,
+                       const llaisys::model::meta_data& meta_data, size_t token_pos, size_t layer, int device_id) {
     LOG_INFO("qwen2_decoder::begin:token_pos:" << token_pos);
     LOG_INFO("qwen2_decoder::begin:nlayer: " << layer);
     LOG_TENSOR_META_AT("qwen2_decoder::begin:hidden_states", hidden_states);
@@ -71,7 +70,12 @@ tensor_t qwen2_decoder(tensor_t &hidden_states,
         pos_ids_host[i] = static_cast<int64_t>(token_pos + i);
     }
     tensor_t pos_ids = llaisys::Tensor::create({seq_len}, LLAISYS_DTYPE_I64, device_type, device_id);
-    pos_ids->load(pos_ids_host.data());
+    llaisys::core::context().setDevice(device_type, device_id);
+    auto& runtime = llaisys::core::context().runtime();
+    llaisysMemcpyKind_t pos_kind = (device_type == LLAISYS_DEVICE_CPU) ? LLAISYS_MEMCPY_H2H : LLAISYS_MEMCPY_H2D;
+    runtime.api()->memcpy_async(pos_ids->data(), pos_ids_host.data(), seq_len * sizeof(int64_t), pos_kind,
+                                runtime.stream());
+    runtime.api()->stream_synchronize(runtime.stream());
     ops::rope(q_rope, q_3d, pos_ids, rope_theta);
     ops::rope(k_rope, k_3d, pos_ids, rope_theta);
     LOG_TENSOR_META_AT("q_rope:", q_rope);
@@ -83,14 +87,12 @@ tensor_t qwen2_decoder(tensor_t &hidden_states,
     tensor_t attn_val = Tensor::create(q_rope->shape(), dtype, device_type, device_id);
     float scale = 1 / sqrt(static_cast<float>(head_dim));
     if (paged_cache && seq_len == 1 && device_type == LLAISYS_DEVICE_NVIDIA) {
+#ifdef ENABLE_NVIDIA_API
+        cudaDeviceSynchronize();
+#endif
         // decode 场景使用 paged attention；prefill 仍走普通 self-attention。
-        ops::self_attention_paged(attn_val,
-                                  q_rope,
-                                  paged_cache->paged_kv_data(layer),
-                                  paged_cache->kv_indptr(),
-                                  paged_cache->kv_indices(),
-                                  paged_cache->kv_last_page_len(),
-                                  paged_cache->block_size(),
+        ops::self_attention_paged(attn_val, q_rope, paged_cache->paged_kv_data(layer), paged_cache->kv_indptr(),
+                                  paged_cache->kv_indices(), paged_cache->kv_last_page_len(), paged_cache->block_size(),
                                   scale);
     } else {
         tensor_t k_attn;

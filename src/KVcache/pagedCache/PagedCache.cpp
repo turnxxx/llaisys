@@ -113,9 +113,20 @@ void PagedCache::refresh_page_metadata() {
         indices_host[static_cast<size_t>(i)] = row[static_cast<size_t>(i)];
     }
 
-    kv_indptr_->load(indptr_host.data());
-    kv_last_page_len_->load(last_host.data());
-    kv_indices_->load(indices_host.data());
+    llaisys::core::context().setDevice(device_, device_id_);
+    auto &runtime = llaisys::core::context().runtime();
+    auto api = runtime.api();
+    auto stream = runtime.stream();
+    const llaisysMemcpyKind_t kind =
+        (device_ == LLAISYS_DEVICE_CPU) ? LLAISYS_MEMCPY_H2H : LLAISYS_MEMCPY_H2D;
+
+    api->memcpy_async(kv_indptr_->data(), indptr_host.data(),
+                      indptr_host.size() * sizeof(int32_t), kind, stream);
+    api->memcpy_async(kv_last_page_len_->data(), last_host.data(),
+                      last_host.size() * sizeof(int32_t), kind, stream);
+    api->memcpy_async(kv_indices_->data(), indices_host.data(),
+                      indices_host.size() * sizeof(int32_t), kind, stream);
+    api->stream_synchronize(stream);
 }
 
 void PagedCache::write_tokens_to_pages(
@@ -134,7 +145,9 @@ void PagedCache::write_tokens_to_pages(
 
     CHECK_SAME_DEVICE(paged_kv_layers_[layer], k, v);
     llaisys::core::context().setDevice(device_, device_id_);
-    auto api = llaisys::core::context().runtime().api();
+    auto &runtime = llaisys::core::context().runtime();
+    auto api = runtime.api();
+    auto stream = runtime.stream();
     const llaisysMemcpyKind_t memcpy_kind =
         (device_ == LLAISYS_DEVICE_CPU) ? LLAISYS_MEMCPY_H2H : LLAISYS_MEMCPY_D2D;
 
@@ -160,18 +173,21 @@ void PagedCache::write_tokens_to_pages(
             const int64_t src_elem =
                 ((static_cast<int64_t>(t) * num_kv_heads + h) * head_dim);
 
-            api->memcpy_sync(
+            api->memcpy_async(
                 dst_base + static_cast<size_t>(k_dst_elem) * elem_bytes,
                 k_src + static_cast<size_t>(src_elem) * elem_bytes,
                 static_cast<size_t>(head_dim) * elem_bytes,
-                memcpy_kind);
-            api->memcpy_sync(
+                memcpy_kind,
+                stream);
+            api->memcpy_async(
                 dst_base + static_cast<size_t>(v_dst_elem) * elem_bytes,
                 v_src + static_cast<size_t>(src_elem) * elem_bytes,
                 static_cast<size_t>(head_dim) * elem_bytes,
-                memcpy_kind);
+                memcpy_kind,
+                stream);
         }
     }
+    api->stream_synchronize(stream);
 }
 
 void PagedCache::init(

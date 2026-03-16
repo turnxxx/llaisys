@@ -97,7 +97,9 @@ void NaiveCache::append(size_t layer, llaisys::tensor_t &k,
                                           ? LLAISYS_MEMCPY_H2H
                                           : LLAISYS_MEMCPY_D2D;
     llaisys::core::context().setDevice(k_cache_->deviceType(), k_cache_->deviceId());
-    auto api = llaisys::core::context().runtime().api();
+    auto &runtime = llaisys::core::context().runtime();
+    auto api = runtime.api();
+    auto stream = runtime.stream();
 
     std::byte *k_dst = k_cache_->data();
     std::byte *v_dst = v_cache_->data();
@@ -107,15 +109,18 @@ void NaiveCache::append(size_t layer, llaisys::tensor_t &k,
     for (size_t t = 0; t < seq; ++t) {
         size_t k_base = ((layer * max_seq + (k_len + t)) * row_elems);
         size_t v_base = ((layer * max_seq + (v_len + t)) * row_elems);
-        api->memcpy_sync(k_dst + k_base * elem_size,
-                         k_src + t * row_elems * elem_size,
-                         row_elems * elem_size,
-                         memcpy_kind);
-        api->memcpy_sync(v_dst + v_base * elem_size,
-                         v_src + t * row_elems * elem_size,
-                         row_elems * elem_size,
-                         memcpy_kind);
+        api->memcpy_async(k_dst + k_base * elem_size,
+                          k_src + t * row_elems * elem_size,
+                          row_elems * elem_size,
+                          memcpy_kind,
+                          stream);
+        api->memcpy_async(v_dst + v_base * elem_size,
+                          v_src + t * row_elems * elem_size,
+                          row_elems * elem_size,
+                          memcpy_kind,
+                          stream);
     }
+    api->stream_synchronize(stream);
 
     k_cur_len_[layer] += seq;
     v_cur_len_[layer] += seq;

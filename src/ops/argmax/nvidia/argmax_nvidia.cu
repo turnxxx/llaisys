@@ -81,12 +81,12 @@ void argmax_thrust(tensor_t max_idx, tensor_t max_val, tensor_t vals){
         sizeof(T),
         LLAISYS_MEMCPY_D2D,
         runtime.stream());
-    runtime.api()->memcpy_async(
+    // idx is a host stack variable; use sync copy to avoid async lifetime hazards.
+    runtime.api()->memcpy_sync(
         max_idx_ptr,
         &idx,
         sizeof(size_t),
-        LLAISYS_MEMCPY_H2D,
-        runtime.stream());
+        LLAISYS_MEMCPY_H2D);
 }
 void argmax(tensor_t max_idx, tensor_t max_val, tensor_t vals) {
     CHECK_SAME_DEVICE(max_idx, max_val, vals);

@@ -4,11 +4,8 @@
 #include <stdexcept>
 
 BlockTable::BlockTable(int block_size, int max_num_reqs, int max_num_blocks_per_req)
-    : block_size_(block_size),
-      max_num_reqs_(max_num_reqs),
-      max_num_blocks_per_req_(max_num_blocks_per_req),
-      table_(static_cast<size_t>(max_num_reqs) *
-             static_cast<size_t>(max_num_blocks_per_req), -1),
+    : block_size_(block_size), max_num_reqs_(max_num_reqs), max_num_blocks_per_req_(max_num_blocks_per_req),
+      table_(static_cast<size_t>(max_num_reqs) * static_cast<size_t>(max_num_blocks_per_req), -1),
       num_blocks_(static_cast<size_t>(max_num_reqs), 0) {
     if (block_size_ <= 0 || max_num_reqs_ < 0 || max_num_blocks_per_req_ < 0) {
         throw std::invalid_argument("Invalid BlockTable shape arguments");
@@ -23,8 +20,7 @@ void BlockTable::append_row(int row_idx, const std::vector<int>& block_ids) {
 
     const int base = row_idx * max_num_blocks_per_req_;
     for (int i = 0; i < append_size; ++i) {
-        table_[static_cast<size_t>(base + old_size + i)] =
-            static_cast<int32_t>(block_ids[static_cast<size_t>(i)]);
+        table_[static_cast<size_t>(base + old_size + i)] = static_cast<int32_t>(block_ids[static_cast<size_t>(i)]);
     }
     num_blocks_[static_cast<size_t>(row_idx)] = old_size + append_size;
 }
@@ -67,8 +63,7 @@ void BlockTable::swap_row(int src, int dst) {
 
     const int src_base = src * max_num_blocks_per_req_;
     const int dst_base = dst * max_num_blocks_per_req_;
-    std::swap_ranges(table_.begin() + src_base,
-                     table_.begin() + src_base + max_num_blocks_per_req_,
+    std::swap_ranges(table_.begin() + src_base, table_.begin() + src_base + max_num_blocks_per_req_,
                      table_.begin() + dst_base);
     std::swap(num_blocks_[static_cast<size_t>(src)], num_blocks_[static_cast<size_t>(dst)]);
 }
@@ -94,11 +89,8 @@ int BlockTable::num_blocks_of(int row_idx) const {
     return num_blocks_[static_cast<size_t>(row_idx)];
 }
 
-void BlockTable::compute_slot_mapping(
-    const int* req_indices,
-    const int* positions,
-    int num_tokens,
-    int64_t* out_slot_mapping) const {
+void BlockTable::compute_slot_mapping(const int* req_indices, const int* positions, int num_tokens,
+                                      int64_t* out_slot_mapping) const {
     assert(req_indices != nullptr);
     assert(positions != nullptr);
     assert(out_slot_mapping != nullptr);
@@ -115,11 +107,11 @@ void BlockTable::compute_slot_mapping(
         const int offset = pos % block_size_;
         const int num_blocks = num_blocks_[static_cast<size_t>(row_idx)];
         assert(logical_block_idx < num_blocks);
+        (void)num_blocks; // 避免 Release 下 assert 被去掉时的未使用变量警告
 
         const int32_t physical_block = get_physical_block(row_idx, logical_block_idx);
         assert(physical_block >= 0);
-        out_slot_mapping[i] =
-            static_cast<int64_t>(physical_block) * static_cast<int64_t>(block_size_) + offset;
+        out_slot_mapping[i] = static_cast<int64_t>(physical_block) * static_cast<int64_t>(block_size_) + offset;
     }
 }
 
