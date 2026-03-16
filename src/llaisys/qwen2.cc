@@ -1,7 +1,6 @@
 
 #include "llaisys/models/qwen2.h"
 #include "../model/Qwen2/model_qwen2.hpp"
-#include "../model/Qwen2/naive_session.hpp"
 #include "../model/model_utils.hpp"
 #include "llaisys_tensor.hpp"
 #include <cstring>
@@ -32,11 +31,8 @@ struct LlaisysWeightBuffer {
     llaisys::model::Weight_buffer buffer;
 };
 
-__export struct LlaisysQwen2Model *llaisysQwen2ModelCreate(
-    const LlaisysQwen2Meta *meta,
-    llaisysDeviceType_t device,
-    int *device_ids,
-    int ndevice) {
+__export struct LlaisysQwen2Model* llaisysQwen2ModelCreate(const LlaisysQwen2Meta* meta, llaisysDeviceType_t device,
+                                                           int* device_ids, int ndevice) {
     if (!meta) {
         return nullptr;
     }
@@ -82,59 +78,59 @@ __export struct LlaisysQwen2Model *llaisysQwen2ModelCreate(
     return wrapper;
 }
 
-static llaisysTensor_t wrap_tensor(const llaisys::Weights_t &w) {
+static llaisysTensor_t wrap_tensor(const llaisys::Weights_t& w) {
     if (!w) {
         return nullptr;
     }
     return new LlaisysTensor{w->weights()};
 }
 
-static void release_tensor(llaisysTensor_t &t) {
+static void release_tensor(llaisysTensor_t& t) {
     delete t;
     t = nullptr;
 }
 
-static void clear_weights(LlaisysQwen2Model *model) {
+static void clear_weights(LlaisysQwen2Model* model) {
     if (!model) {
         return;
     }
     release_tensor(model->c_weights.in_embed);
     release_tensor(model->c_weights.out_embed);
     release_tensor(model->c_weights.out_norm_w);
-    for (auto &t : model->attn_norm_w) {
+    for (auto& t : model->attn_norm_w) {
         release_tensor(t);
     }
-    for (auto &t : model->attn_q_w) {
+    for (auto& t : model->attn_q_w) {
         release_tensor(t);
     }
-    for (auto &t : model->attn_q_b) {
+    for (auto& t : model->attn_q_b) {
         release_tensor(t);
     }
-    for (auto &t : model->attn_k_w) {
+    for (auto& t : model->attn_k_w) {
         release_tensor(t);
     }
-    for (auto &t : model->attn_k_b) {
+    for (auto& t : model->attn_k_b) {
         release_tensor(t);
     }
-    for (auto &t : model->attn_v_w) {
+    for (auto& t : model->attn_v_w) {
         release_tensor(t);
     }
-    for (auto &t : model->attn_v_b) {
+    for (auto& t : model->attn_v_b) {
         release_tensor(t);
     }
-    for (auto &t : model->attn_o_w) {
+    for (auto& t : model->attn_o_w) {
         release_tensor(t);
     }
-    for (auto &t : model->mlp_norm_w) {
+    for (auto& t : model->mlp_norm_w) {
         release_tensor(t);
     }
-    for (auto &t : model->mlp_gate_w) {
+    for (auto& t : model->mlp_gate_w) {
         release_tensor(t);
     }
-    for (auto &t : model->mlp_up_w) {
+    for (auto& t : model->mlp_up_w) {
         release_tensor(t);
     }
-    for (auto &t : model->mlp_down_w) {
+    for (auto& t : model->mlp_down_w) {
         release_tensor(t);
     }
     model->attn_norm_w.clear();
@@ -152,7 +148,7 @@ static void clear_weights(LlaisysQwen2Model *model) {
     model->weights_ready = false;
 }
 
-__export void llaisysQwen2ModelDestroy(struct LlaisysQwen2Model *model) {
+__export void llaisysQwen2ModelDestroy(struct LlaisysQwen2Model* model) {
     if (!model) {
         return;
     }
@@ -167,8 +163,7 @@ __export void llaisysQwen2ModelDestroy(struct LlaisysQwen2Model *model) {
     delete model;
 }
 
-__export void llaisysQwen2ModelLoadWeights(struct LlaisysQwen2Model *model,
-                                           llaisysWeightBuffer_t buffer) {
+__export void llaisysQwen2ModelLoadWeights(struct LlaisysQwen2Model* model, llaisysWeightBuffer_t buffer) {
     if (!model || !buffer || !model->qwen2_model) {
         return;
     }
@@ -183,7 +178,7 @@ __export void llaisysQwen2ModelLoadWeights(struct LlaisysQwen2Model *model,
     clear_weights(model);
 }
 
-__export struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(struct LlaisysQwen2Model *model) {
+__export struct LlaisysQwen2Weights* llaisysQwen2ModelWeights(struct LlaisysQwen2Model* model) {
     if (!model || !model->qwen2_model) {
         return nullptr;
     }
@@ -194,7 +189,7 @@ __export struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(struct LlaisysQwen
     if (model->weights_ready) {
         return &model->c_weights;
     }
-    const auto &qw = impl->weights();
+    const auto& qw = impl->weights();
     const size_t nlayer = qw.layers.size();
     if (nlayer == 0) {
         return nullptr;
@@ -220,7 +215,7 @@ __export struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(struct LlaisysQwen
     model->mlp_down_w.resize(nlayer);
 
     for (size_t i = 0; i < nlayer; ++i) {
-        const auto &layer = qw.layers[i];
+        const auto& layer = qw.layers[i];
         model->attn_norm_w[i] = wrap_tensor(layer.input_layernorm.weight);
         model->attn_q_w[i] = wrap_tensor(layer.attention.q);
         model->attn_q_b[i] = wrap_tensor(layer.attention.bias_q);
@@ -251,8 +246,7 @@ __export struct LlaisysQwen2Weights *llaisysQwen2ModelWeights(struct LlaisysQwen
     return &model->c_weights;
 }
 
-__export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model *model, int64_t *token_ids,
-                                        size_t ntoken) {
+__export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model* model, int64_t* token_ids, size_t ntoken) {
     if (!model || !model->qwen2_model || !token_ids || ntoken == 0) {
         return -1;
     }
@@ -261,20 +255,13 @@ __export int64_t llaisysQwen2ModelInfer(struct LlaisysQwen2Model *model, int64_t
         return -1;
     }
     std::vector<int64_t> tokens(token_ids, token_ids + ntoken);
-    const auto &device_spec = impl->deviceSpec();
-    int device_id = device_spec.device_ids.empty() ? 0 : device_spec.device_ids.front();
-    auto session = llaisys::model::naive_session::create(
-        impl->config(), tokens, device_spec.device_type, device_id);
+    auto session = impl->createSession(tokens);
     auto outputs = impl->inferStep(session);
     return outputs.next_token;
 }
 
-__export int64_t llaisysQwen2ModelInferDialog(struct LlaisysQwen2Model *model,
-                                              int64_t *token_ids,
-                                              size_t ntoken,
-                                              size_t max_steps,
-                                              int64_t *out_tokens,
-                                              size_t out_ntoken) {
+__export int64_t llaisysQwen2ModelInferDialog(struct LlaisysQwen2Model* model, int64_t* token_ids, size_t ntoken,
+                                              size_t max_steps, int64_t* out_tokens, size_t out_ntoken) {
     if (!model || !model->qwen2_model || !token_ids || ntoken == 0) {
         return -1;
     }

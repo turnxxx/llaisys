@@ -11,8 +11,10 @@ public:
           eos_token_id(static_cast<int64_t>(config.eos_token_id)) {}
     void loadWeights(WeightsMap &weights) override;
     void unloadWeights() override;
-    std::unique_ptr<ModelSession> createSession() override;
-    void resetSession(ModelSession &session) override;
+    session_t createSession(std::vector<int64_t> tokens = {}) override;
+    void resetSession(ModelSession& session) override;
+    void initCache() override;
+    CacheHandle_t allocateCache() override;
 
     InferenceOutputs inferStep(session_t session) override;
     std::vector<int64_t> inferDialog(std::vector<int64_t> &tokens,
@@ -25,7 +27,6 @@ public:
 
 private:
     WeightsMap weights_;
-    // 推理初始化功能，实现token_idx->input_embedding以及KV_cache资源分配
     tensor_t inferInit(session_t session);
     llaisys::Qwen2::qwen2_weights qwen2_weights;
     void parseWeight();

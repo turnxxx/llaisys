@@ -72,15 +72,21 @@ public:
     std::vector<int32_t> get_block_table_row() const;
     int get_context_len() const;
 
+    void write_tokens_to_pages(size_t layer,
+                               const std::vector<int64_t>& slots,
+                               llaisys::tensor_t& k,
+                               llaisys::tensor_t& v);
+
+    llaisysDeviceType_t cache_device() const { return device_; }
+    int cache_device_id() const { return device_id_; }
+    size_t computed_num_blocks() const { return computed_num_blocks_; }
+    const KVCacheConfig& cache_config() const { return config_; }
+
 private:
     static int dtype_size_bytes(llaisysDataType_t dtype);
     void rebuild_manager(size_t max_seq);
     void update_used_bytes();
     void refresh_page_metadata();
-    void write_tokens_to_pages(size_t layer,
-                               const std::vector<int64_t>& slots,
-                               llaisys::tensor_t& k,
-                               llaisys::tensor_t& v);
 
 private:
     KVCacheConfig config_{};

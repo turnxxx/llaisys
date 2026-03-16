@@ -1,31 +1,22 @@
 #include "../model_base.hpp"
-// 会话类，管理会话自己的状态
+
 namespace llaisys::model {
+
 class naive_session : public ModelSession {
 public:
     ~naive_session() override = default;
-    void init(const llaisys::model::meta_data &meta_data,
-              std::vector<int64_t> &tokens,
-              llaisysDeviceType_t device_type = LLAISYS_DEVICE_CPU,
-              int device_id = 0);
-    const std::vector<int64_t> &tokens() const override;
+    void init(std::vector<int64_t>& tokens, CacheHandle_t handle);
+    const std::vector<int64_t>& tokens() const override;
     size_t seq_len() const override;
     size_t token_pos() const override;
-    KVcache_t kv_cache() const override;
-    static session_t create(const llaisys::model::meta_data &meta_data,
-                            std::vector<int64_t> &tokens,
-                            llaisysDeviceType_t device_type = LLAISYS_DEVICE_CPU,
-                            int device_id = 0) {
-        auto session_t = std::make_shared<naive_session>();
-        session_t->init(meta_data, tokens, device_type, device_id);
-        return session_t;
-    }
+    CacheHandle_t cache() const override { return cache_; }
     void append(int64_t next_token) override;
 
 private:
     std::vector<int64_t> tokens_;
-    size_t seq_len_;
-    size_t token_pos_;
-    KVcache_t kv_cache_;
+    size_t seq_len_ = 0;
+    size_t token_pos_ = 0;
+    CacheHandle_t cache_;
 };
+
 } // namespace llaisys::model

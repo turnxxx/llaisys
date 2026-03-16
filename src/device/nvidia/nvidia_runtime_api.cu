@@ -54,10 +54,8 @@ void deviceSynchronize() {
 }
 
 llaisysStream_t createStream() {
-    // 创建非阻塞 stream，便于后续算子异步执行。
     cudaStream_t stream = nullptr;
-    checkCuda(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking),
-              "cudaStreamCreateWithFlags");
+    checkCuda(cudaStreamCreate(&stream), "cudaStreamCreate");
     return reinterpret_cast<llaisysStream_t>(stream);
 }
 

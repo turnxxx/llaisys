@@ -4,6 +4,7 @@
 */
 #pragma once
 
+#include "../KVcache/CacheHandle.hpp"
 #include "../KVcache/KVcacheBase.hpp"
 #include "../KVcache/NaiveCache/NaiveCache.hpp"
 #include "../tensor/tensor.hpp"
@@ -18,6 +19,7 @@
 #include <vector>
 namespace llaisys::model {
 class ModelBase;
+using llaisys::KVcache::CacheHandle_t;
 using llaisys::KVcache::KVcache_t;
 using model_t = std::shared_ptr<ModelBase>;
 // 设备规格：目标设备类型与设备列表，预留多设备/分布式字段
@@ -42,8 +44,7 @@ struct InferenceOutputs {
 // 权重映射：键为权重指针
 using WeightsMap = std::unordered_map<std::string, Weights_t>;
 
-// 推理会话：保存 KV-cache 等与会话相关的状态
-
+// 推理会话：保存 token 序列与 CacheHandle（每个 session 持有独立的 cache 句柄）
 class ModelSession {
 public:
     virtual ~ModelSession() = default;
@@ -51,9 +52,10 @@ public:
     virtual void append(int64_t next_token) = 0;
     virtual size_t seq_len() const = 0;
     virtual size_t token_pos() const = 0;
-    virtual KVcache_t kv_cache() const = 0;
+    virtual CacheHandle_t cache() const = 0;
 };
 using session_t = std::shared_ptr<ModelSession>;
+
 // 模型基类：定义通用接口，具体模型需继承实现
 class ModelBase {
 public:
@@ -77,9 +79,14 @@ public:
     virtual void loadWeights(WeightsMap &weights) = 0;
     virtual void unloadWeights() = 0;
 
-    // 会话管理（用于多请求或 KV-cache 管理）
-    virtual std::unique_ptr<ModelSession> createSession() = 0;
-    virtual void resetSession(ModelSession &session) = 0;
+    // 会话管理（Session 由调用方持有，推理时传入）
+    virtual session_t createSession(std::vector<int64_t> tokens = {}) = 0;
+    virtual void resetSession(ModelSession& session) = 0;
+
+    // KV-cache 管理：Model 持有 cache 后端，allocateCache 为每个 session 分配独立句柄
+    virtual void initCache() = 0;
+    virtual CacheHandle_t allocateCache() = 0;
+    KVcache_t kv_cache() const { return _kv_cache; }
 
     // 推理入口：单轮推理（生成一个 token）
     virtual InferenceOutputs inferStep(session_t session) = 0;
@@ -91,10 +98,10 @@ protected:
     explicit ModelBase(const meta_data &config, const DeviceSpec &device, const ParallelSpec &parallel)
         : _config(config), _device(device), _parallel(parallel) {}
 
-    // 基础配置与运行参数
     meta_data _config;
     DeviceSpec _device;
     ParallelSpec _parallel;
+    KVcache_t _kv_cache;
 };
 
 } // namespace llaisys::model

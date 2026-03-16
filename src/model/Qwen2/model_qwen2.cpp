@@ -1,11 +1,94 @@
 #include "model_qwen2.hpp"
+#include "../../KVcache/NaiveCache/NaiveCache.hpp"
+#include "../../KVcache/NaiveCache/NaiveCacheHandle.hpp"
+#include "../../KVcache/pagedCache/PagedCache.hpp"
+#include "../../KVcache/pagedCache/PagedCacheHandle.hpp"
 #include "../../ops/ops.hpp"
 #include "../../utils.hpp"
 #include "../../core/llaisys_core.hpp"
 #include "naive_session.hpp"
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <string>
 
 namespace llaisys::model {
+namespace {
+bool parse_env_bool(const char *env, bool fallback) {
+    if (!env) {
+        return fallback;
+    }
+    std::string s(env);
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (s == "1" || s == "true" || s == "on" || s == "yes") {
+        return true;
+    }
+    if (s == "0" || s == "false" || s == "off" || s == "no") {
+        return false;
+    }
+    return fallback;
+}
+
+bool should_use_paged_attention(const llaisys::model::meta_data &meta_data,
+                                llaisysDeviceType_t device_type) {
+    if (device_type != LLAISYS_DEVICE_NVIDIA) {
+        return false;
+    }
+    bool enabled = meta_data.use_paged_attention;
+    enabled = parse_env_bool(std::getenv("LLAISYS_USE_PAGED_ATTENTION"), enabled);
+    return enabled;
+}
+} // namespace
+
+void Model_Qwen2::initCache() {
+    int device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
+    size_t head_dim = _config.hidden_size / _config.num_attention_heads;
+    llaisys::KVcache::CacheMeta cache_meta{
+        _config.num_hidden_layers,
+        _config.hidden_size,
+        _config.max_position_embeddings,
+        _config.num_attention_heads,
+        head_dim,
+        _config.num_key_value_heads,
+        1};
+    const bool enable_paged = should_use_paged_attention(_config, _device.device_type);
+    if (enable_paged) {
+        // batch must account for the default request in PagedCache + at least 1 session handle
+        cache_meta.batch = std::max(cache_meta.batch, static_cast<size_t>(2));
+        _kv_cache = llaisys::KVcache::PagedCache::create(
+            cache_meta, _device.device_type, device_id, _config.torch_type, nullptr);
+        LOG_INFO("Model_Qwen2::initCache: use PagedCache (paged attention enabled)");
+    } else {
+        _kv_cache = nullptr;
+        LOG_INFO("Model_Qwen2::initCache: NaiveCache mode (per-session allocation)");
+    }
+}
+
+CacheHandle_t Model_Qwen2::allocateCache() {
+    int device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
+    size_t head_dim = _config.hidden_size / _config.num_attention_heads;
+
+    if (_kv_cache) {
+        auto paged = std::dynamic_pointer_cast<llaisys::KVcache::PagedCache>(_kv_cache);
+        if (paged) {
+            return std::make_shared<llaisys::KVcache::PagedCacheHandle>(paged);
+        }
+    }
+    llaisys::KVcache::CacheMeta cache_meta{
+        _config.num_hidden_layers,
+        _config.hidden_size,
+        _config.max_position_embeddings,
+        _config.num_attention_heads,
+        head_dim,
+        _config.num_key_value_heads,
+        1};
+    auto naive = llaisys::KVcache::NaiveCache::create(
+        cache_meta, _device.device_type, device_id, _config.torch_type, nullptr);
+    return std::make_shared<llaisys::KVcache::NaiveCacheHandle>(naive);
+}
+
 // 加载权重，根据运行时的不同设备来把权重加载到不同文件上
 void Model_Qwen2::loadWeights(WeightsMap& weights) {
     int target_device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
@@ -25,8 +108,6 @@ void Model_Qwen2::loadWeights(WeightsMap& weights) {
 
     switch (this->_device.device_type) {
     case LLAISYS_DEVICE_CPU:
-        // 根据并行类型选择权重加载
-        // 不并行的情况
         if (this->_parallel.tensor_parallel == 0 && this->_parallel.pipeline_parallel == 0 &&
             this->_parallel.data_parallel == 0) {
             load_no_parallel_to_device(LLAISYS_DEVICE_CPU);
@@ -46,13 +127,13 @@ void Model_Qwen2::loadWeights(WeightsMap& weights) {
         EXCEPTION_UNSUPPORTED_DEVICE;
     }
     parseWeight();
+    initCache();
     this->show();
     LOG_INFO("Model_Qwen2::loadWeights: complete");
 }
 model_t Model_Qwen2::create(WeightsMap& weights, const meta_data& meta_data, const DeviceSpec& device,
                             const ParallelSpec& parallel) {
     auto model = std::make_shared<Model_Qwen2>(meta_data, device, parallel);
-    // 加载权重
     model->loadWeights(weights);
     model->bos_token_id = static_cast<int64_t>(meta_data.bos_token_id);
     model->eos_token_id = static_cast<int64_t>(meta_data.eos_token_id);
@@ -63,11 +144,10 @@ void Model_Qwen2::unloadWeights() {
     this->weights_.clear();
 }
 
-std::unique_ptr<ModelSession> Model_Qwen2::createSession() {
-    auto session = std::make_unique<naive_session>();
-    std::vector<int64_t> tokens;
-    int device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
-    session->init(_config, tokens, _device.device_type, device_id);
+session_t Model_Qwen2::createSession(std::vector<int64_t> tokens) {
+    auto handle = allocateCache();
+    auto session = std::make_shared<naive_session>();
+    session->init(tokens, handle);
     return session;
 }
 
@@ -76,12 +156,13 @@ void Model_Qwen2::resetSession(ModelSession& session) {
     if (!naive) {
         return;
     }
+    auto handle = allocateCache();
     std::vector<int64_t> tokens;
-    int device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
-    naive->init(_config, tokens, _device.device_type, device_id);
+    naive->init(tokens, handle);
 }
 
 void Model_Qwen2::destroy() {
+    _kv_cache.reset();
     unloadWeights();
     qwen2_weights.embed_tokens.reset();
     qwen2_weights.final_norm.reset();
@@ -95,7 +176,8 @@ InferenceOutputs Model_Qwen2::inferStep(session_t session) {
     LOG_INFO("Model_Qwen2::inferStep:begin");
     LOG_INFO("Model_Qwen2::inferStep:session" << session->seq_len());
     ASSERT(session != nullptr, "Model_Qwen2::inferStep: session is null");
-    ASSERT(session->kv_cache() != nullptr, "Model_Qwen2::inferStep: kv_cache is null");
+    auto cache_handle = session->cache();
+    ASSERT(cache_handle != nullptr, "Model_Qwen2::inferStep: cache handle is null");
 
     const auto& tokens = session->tokens();
     ASSERT(!tokens.empty(), "Model_Qwen2::inferStep: tokens is empty");
@@ -107,7 +189,7 @@ InferenceOutputs Model_Qwen2::inferStep(session_t session) {
     int device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
     size_t token_pos = 0;
     tensor_t hidden_states;
-    if (session->kv_cache()->seq_len() == 0) {
+    if (cache_handle->seq_len() == 0) {
         // prefill: process full sequence
         token_pos = 0;
         hidden_states = inferInit(session);
@@ -143,7 +225,7 @@ InferenceOutputs Model_Qwen2::inferStep(session_t session) {
                "Model_Qwen2::inferStep: attention bias weights are null");
         ASSERT(layer.mlp.gate != nullptr && layer.mlp.up != nullptr && layer.mlp.down != nullptr,
                "Model_Qwen2::inferStep: mlp weights are null");
-        hidden_states = llaisys::Qwen2::qwen2_decoder(hidden_states, qwen2_weights.layers[i], session->kv_cache(),
+        hidden_states = llaisys::Qwen2::qwen2_decoder(hidden_states, qwen2_weights.layers[i], cache_handle,
                                                       _config, token_pos, i, device_id);
     }
 
@@ -179,8 +261,7 @@ std::vector<int64_t> Model_Qwen2::inferDialog(std::vector<int64_t>& tokens, size
     if (tokens.empty()) {
         tokens.push_back(bos_token_id);
     }
-    int device_id = _device.device_ids.empty() ? 0 : _device.device_ids.front();
-    auto session = naive_session::create(_config, tokens, _device.device_type, device_id);
+    auto session = createSession(tokens);
     for (size_t i = 0; i < max_steps; ++i) {
         auto outputs = inferStep(session);
         LOG_INFO("step=" << i << " next=" << outputs.next_token << " eos=" << eos_token_id);

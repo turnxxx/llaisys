@@ -1,4 +1,4 @@
-#include "../../KVcache/KVcacheBase.hpp"
+#include "../../KVcache/CacheHandle.hpp"
 #include "../../model/model_utils.hpp"
 #include "../../ops/ops.hpp"
 #include "../../tensor/tensor.hpp"
@@ -12,7 +12,7 @@ namespace llaisys::Qwen2 {
 tensor_t qwen2_decoder(
     tensor_t &hidden_states,
     const llaisys::Qwen2::layer_weights &weights,
-    llaisys::KVcache::KVcache_t kv_cache,
+    llaisys::KVcache::CacheHandle_t cache,
     const llaisys::model::meta_data &meta_data,
     size_t token_pos,
     size_t layer,
